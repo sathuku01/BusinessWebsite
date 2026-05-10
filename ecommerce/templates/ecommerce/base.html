@@ -318,9 +318,10 @@
       <a href="{% url 'dashboard' %}" class="nav-link {% if request.resolver_match.url_name == 'dashboard' %}active{% endif %}">
         <i class="bi bi-house me-1"></i> Home
       </a>
-      <a href="{% url 'product_list' %}" class="nav-link {% if request.resolver_match.url_name == 'product_list' %}active{% endif %}">
-        <i class="bi bi-grid me-1"></i> Products
-      </a>
+    <a href="{% url 'product_list' %}" class="nav-link {% if request.resolver_match.url_name == 'product_list' %}active{% endif %}">
+      <i class="bi bi-grid me-1"></i> Products
+    </a>
+
       <a href="{% url 'orders_list' %}" class="nav-link {% if request.resolver_match.url_name == 'orders_list' %}active{% endif %}">
         <i class="bi bi-receipt me-1"></i> Orders
       </a>

@@ -407,8 +407,9 @@ def delete_product(request, pk):
         return redirect("admin_dashboard")
     return render(request, "ecommerce/confirm_delete.html", {"product": product})
 def product_list(request):
-    products = Product.objects.all()
+    products = Product.objects.all().prefetch_related('images')
     return render(request, "ecommerce/product_list.html", {"products": products})
+
 @staff_member_required
 def admin_products_list(request):
     products = Product.objects.all()
