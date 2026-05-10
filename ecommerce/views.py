@@ -102,13 +102,23 @@ def logout_view(request):
 @login_required
 def dashboard_view(request):
     orders = Order.objects.filter(customer=request.user.customer)
-    debts = Debt.objects.filter(customer=request.user.customer)
-    payments = Payment.objects.filter(order__customer=request.user.customer)
+
+    # Dashboard metrics
+    total_orders = orders.count()
+    total_spent = sum(o.get_total_amount for o in orders)
+    outstanding = sum(o.get_outstanding_balance for o in orders)
+    pending_orders = orders.filter(status='Pending').count()
+
+    recent_orders = orders.order_by('-order_date')[:5]
+
     return render(request, 'ecommerce/dashboard.html', {
-        'orders': orders,
-        'debts': debts,
-        'payments': payments
+        'total_orders': total_orders,
+        'total_spent': total_spent,
+        'outstanding': outstanding,
+        'pending_orders': pending_orders,
+        'recent_orders': recent_orders,
     })
+
 
 @login_required
 def orders_list_view(request):
