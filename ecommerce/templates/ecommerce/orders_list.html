@@ -17,27 +17,25 @@
   <div class="col-6 col-md-3">
     <div class="stat-card">
       <div class="stat-label mb-1">Total Orders</div>
-      <div class="stat-value">{{ orders|length }}</div>
+      <div class="stat-value">{{ total_orders }}</div>
     </div>
   </div>
   <div class="col-6 col-md-3">
     <div class="stat-card">
       <div class="stat-label mb-1">Pending</div>
-      <div class="stat-value" style="color:#F59E0B;">
-        {{ orders|length }}
-      </div>
+      <div class="stat-value" style="color:#F59E0B;">{{ pending_orders }}</div>
     </div>
   </div>
   <div class="col-6 col-md-3">
     <div class="stat-card">
       <div class="stat-label mb-1">Delivered</div>
-      <div class="stat-value" style="color:#10B981;">—</div>
+      <div class="stat-value" style="color:#10B981;">{{ delivered_orders }}</div>
     </div>
   </div>
   <div class="col-6 col-md-3">
     <div class="stat-card">
       <div class="stat-label mb-1">Outstanding</div>
-      <div class="stat-value" style="color:#EF4444;">—</div>
+      <div class="stat-value" style="color:#EF4444;">KSh {{ outstanding_total }}</div>
     </div>
   </div>
 </div>
