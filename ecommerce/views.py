@@ -129,7 +129,8 @@ def dashboard_view(request):
 
 @login_required
 def orders_list_view(request):
-    orders = Order.objects.filter(customer=request.user.customer)
+    customer = Customer.objects.get(user=request.user)
+    orders = Order.objects.filter(customer=customer).order_by('-order_date')
 
     # Apply filter by status
     status = request.GET.get('status')
