@@ -129,14 +129,29 @@ def dashboard_view(request):
 
 @login_required
 def orders_list_view(request):
-    orders = Order.objects.filter(customer=request.user.customer)
+    try:
+        customer = Customer.objects.get(user=request.user)
+        orders = Order.objects.filter(customer=customer).order_by('-order_date')
 
-    # Apply filter by status
-    status = request.GET.get('status')
-    if status:
-        orders = orders.filter(status=status)
+        total_orders = orders.count()
+        pending_orders = orders.filter(status='pending').count()
+        delivered_orders = orders.filter(status='delivered').count()
+        outstanding_total = sum(o.get_outstanding_balance() for o in orders)
 
-    return render(request, 'ecommerce/orders_list.html', {'orders': orders})
+    except Customer.DoesNotExist:
+        orders = []
+        total_orders = 0
+        pending_orders = 0
+        delivered_orders = 0
+        outstanding_total = 0
+
+    return render(request, 'ecommerce/orders_list.html', {
+        'orders': orders,
+        'total_orders': total_orders,
+        'pending_orders': pending_orders,
+        'delivered_orders': delivered_orders,
+        'outstanding_total': outstanding_total,
+    })
 @login_required
 def order_detail_view(request, pk):
     order = get_object_or_404(Order, pk=pk, customer=request.user.customer)
