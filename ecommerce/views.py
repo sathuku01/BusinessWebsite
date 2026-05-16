@@ -246,38 +246,29 @@ class ProfileView(APIView):
 
 @staff_member_required
 def admin_dashboard(request):
-    orders = Order.objects.all()
-    debts = Debt.objects.all()
-    payments = Payment.objects.all()
-    products = Product.objects.all()  
+    orders = Order.objects.all().order_by('-order_date')
+    debts = Debt.objects.filter(is_paid=False).select_related('customer', 'order')
+    payments = Payment.objects.all().order_by('-payment_date').select_related('order', 'order__customer')
+    products = Product.objects.all().prefetch_related('images')
 
-    # Orders filter
-    order_status = request.GET.get('order_status')
-    if order_status:
-        orders = orders.filter(status=order_status)
+    total_revenue = sum(o.get_total_paid() for o in orders)
+    total_outstanding = sum(o.get_outstanding_balance() for o in orders)
 
-    # Debts filter
-    debt_status = request.GET.get('debt_status')
-    if debt_status == 'paid':
-        debts = debts.filter(is_paid=True)
-    elif debt_status == 'unpaid':
-        debts = debts.filter(is_paid=False)
+    status_choices = [
+        ('pending', 'Pending'),
+        ('shipped', 'Shipped'),
+        ('delivered', 'Delivered'),
+        ('cancelled', 'Cancelled'),
+    ]
 
-    # Payments filter
-    payment_status = request.GET.get('payment_status')
-    if payment_status:
-        payments = payments.filter(status=payment_status)
-
-    payment_date = request.GET.get('payment_date')
-    if payment_date:
-        payments = payments.filter(payment_date__date=payment_date)
-
-    # Return products to template context
     return render(request, 'ecommerce/admin_dashboard.html', {
         'orders': orders,
         'debts': debts,
         'payments': payments,
-        'products': products
+        'products': products,
+        'total_revenue': total_revenue,
+        'total_outstanding': total_outstanding,
+        'status_choices': status_choices,
     })
 
 def custom_login(request):
@@ -441,5 +432,14 @@ def product_list(request):
 
 @staff_member_required
 def admin_products_list(request):
-    products = Product.objects.all()
-    return render(request, "ecommerce/admin_products_list.html", {"products": products})
+    products = Product.objects.all().prefetch_related('images')
+    in_stock_count = products.filter(stock__gt=0).count()
+    out_of_stock_count = products.filter(stock=0).count()
+    total_value = sum(p.price * p.stock for p in products)
+    return render(request, 'ecommerce/admin_products_list.html', {
+        'products': products,
+        'in_stock_count': in_stock_count,
+        'out_of_stock_count': out_of_stock_count,
+        'total_value': total_value,
+    })
+
