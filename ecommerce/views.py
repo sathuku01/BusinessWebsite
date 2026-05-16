@@ -435,5 +435,15 @@ def product_list(request):
 
 @staff_member_required
 def admin_products_list(request):
-    products = Product.objects.all()
-    return render(request, "ecommerce/admin_products_list.html", {"products": products})
+    products = Product.objects.all().prefetch_related('images')
+    in_stock_count = products.filter(stock__gt=0).count()
+    out_of_stock_count = products.filter(stock=0).count()
+    total_value = sum(p.price * p.stock for p in products)
+
+    return render(request, 'ecommerce/admin_products_list.html', {
+        'products': products,
+        'in_stock_count': in_stock_count,
+        'out_of_stock_count': out_of_stock_count,
+        'total_value': total_value,
+    })
+
