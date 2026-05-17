@@ -25,6 +25,9 @@ from decimal import Decimal
 from django.shortcuts import render,redirect
 from .forms import inlineformset_factory
 
+# -------------------
+# DRF ViewSets
+# -------------------
 class CustomerViewSet(viewsets.ModelViewSet):
     queryset = Customer.objects.all()
     serializer_class = CustomerSerializer
@@ -64,7 +67,7 @@ def register_view(request):
             except Exception as e:
                 form.add_error(None, f"Registration failed: {str(e)}")
         else:
-            messages.error(request, 'Please correct the errors below.')
+            form.add_error(None, "Please correct the errors below.")
     else:
         form = CustomUserCreationForm()
 
@@ -85,6 +88,7 @@ def login_view(request):
         form = CustomAuthenticationForm()
     return render(request, 'auth/login.html', {'form': form})
 
+
 @login_required
 def logout_view(request):
     logout(request)
@@ -95,13 +99,13 @@ def dashboard_view(request):
     try:
         customer = Customer.objects.get(user=request.user)
         orders = Order.objects.filter(customer=customer).order_by('-order_date')
-        
+
         total_orders = orders.count()
         total_spent = sum(o.get_total_amount() for o in orders)
         outstanding = sum(o.get_outstanding_balance() for o in orders)
         pending_orders = orders.filter(status='pending').count()
         recent_orders = orders[:5]
-        
+
     except Customer.DoesNotExist:
         total_orders = 0
         total_spent = 0
@@ -141,22 +145,22 @@ def orders_list_view(request):
         'total_orders': total_orders,
         'pending_orders': pending_orders,
         'delivered_orders': delivered_orders,
-        'outstanding_total': outstanding_total,
+'outstanding_total': outstanding_total,
     })
+
 
 @login_required
 def order_detail_view(request, pk):
     order = get_object_or_404(Order, pk=pk, customer=request.user.customer)
     return render(request, 'ecommerce/order_detail.html', {'order': order})
 
+
 @login_required
 def debts_list_view(request):
     try:
         customer = Customer.objects.get(user=request.user)
         debts = Debt.objects.filter(customer=customer).select_related('order')
-        total_outstanding = sum(
-            d.outstanding_balance for d in debts if not d.is_paid
-        )
+        total_outstanding = sum(d.outstanding_balance for d in debts if not d.is_paid)
         paid_count = debts.filter(is_paid=True).count()
     except Customer.DoesNotExist:
         debts = []
@@ -168,6 +172,7 @@ def debts_list_view(request):
         'total_outstanding': total_outstanding,
         'paid_count': paid_count,
     })
+
 
 @login_required
 def profile_view(request):
@@ -197,17 +202,20 @@ def order_product_view(request):
                 quantity=quantity,
                 price=product.price
             )
-            order_item.save()  
+            order_item.save()
 
             messages.success(request, f"Order #{order.id} placed successfully for {product.name}!")
-
             return redirect('orders_list')
     else:
         form = OrderForm()
 
     return render(request, 'ecommerce/order_product.html', {'form': form})
 
+# -------------------
+# API Profile Endpoint
+# -------------------
 User = get_user_model()
+
 
 class ProfileView(APIView):
     permission_classes = [IsAuthenticated]
@@ -224,7 +232,6 @@ class ProfileView(APIView):
         return Response(data)
 
 
-    
 @staff_member_required
 def admin_dashboard(request):
     orders = Order.objects.all().order_by('-order_date')
@@ -234,6 +241,9 @@ def admin_dashboard(request):
 
     total_revenue = sum(o.get_total_paid() for o in orders)
     total_outstanding = sum(o.get_outstanding_balance() for o in orders)
+
+    pending_count = Order.objects.filter(status='pending').count()
+    low_stock_count = Product.objects.filter(stock__lte=3).count()
 
     status_choices = [
         ('pending', 'Pending'),
@@ -250,7 +260,28 @@ def admin_dashboard(request):
         'total_revenue': total_revenue,
         'total_outstanding': total_outstanding,
         'status_choices': status_choices,
+        'pending_count': pending_count,
+        'low_stock_count': low_stock_count,
     })
+
+
+@staff_member_required
+def payment_list_view(request):
+    payments = Payment.objects.all().order_by('-payment_date').select_related(
+        'order', 'order__customer', 'order__customer__user'
+    )
+
+    total_collected = sum(p.amount for p in payments)
+    mpesa_count = payments.filter(payment_method='mpesa').count()
+    cash_count = payments.filter(payment_method='cash').count()
+
+    return render(request, 'ecommerce/payment_list.html', {
+        'payments': payments,
+        'total_collected': total_collected,
+        'mpesa_count': mpesa_count,
+        'cash_count': cash_count,
+    })
+
 
 def custom_login(request):
     if request.method == "POST":
@@ -261,13 +292,13 @@ def custom_login(request):
             messages.success(request, 'You have been logged in successfully.')
             if user.is_staff:
                 return redirect('admin_dashboard')
-            else:
-                return redirect('dashboard')
+            return redirect('dashboard')
         else:
             messages.error(request, 'Invalid username or password.')
     else:
         form = CustomAuthenticationForm()
     return render(request, "auth/login.html", {"form": form})
+
 
 @staff_member_required
 @require_POST
@@ -276,6 +307,7 @@ def update_order_status(request, pk):
     order.status = request.POST.get("status")
     order.save()
     return redirect("admin_dashboard")
+
 
 @staff_member_required
 def update_payment(request, pk):
@@ -291,12 +323,11 @@ def update_payment(request, pk):
             return redirect("admin_dashboard")
         except Exception as e:
             messages.error(request, f"Error updating payment: {e}")
-    else:
-        return render(request, "ecommerce/payment_form.html", {
-            "form": PaymentForm(instance=payment),
-            "payment": payment,
-            "order": order
-        })
+            return render(request, "ecommerce/payment_form.html", {
+                "form": PaymentForm(instance=payment),
+                "payment": payment,
+                "order": order,
+            })
 
 
 @staff_member_required
@@ -310,44 +341,25 @@ def add_payment(request, order_id):
             payment.order = order
             payment.save()
 
-            debt, created = Debt.objects.get_or_create(
+            debt, _ = Debt.objects.get_or_create(
                 order=order,
                 customer=order.customer,
                 defaults={
                     "outstanding_balance": order.get_total_amount(),
                     "is_paid": False,
                     "paid_at": None,
-                }
+                },
             )
             debt.calculate_outstanding_balance()
 
             messages.success(request, "Payment added successfully.")
             return redirect("admin_dashboard")
+
     else:
         form = PaymentForm()
 
     return render(request, "ecommerce/payment_form.html", {"form": form, "order": order})
 
-@staff_member_required
-def update_payment(request, pk):
-    payment = get_object_or_404(Payment, pk=pk)
-    order = payment.order
-
-    if request.method == "POST":
-        form = PaymentForm(request.POST, instance=payment)
-        if form.is_valid():
-            form.save()
-
-            debt = Debt.objects.filter(order=order).first()
-            if debt:
-                debt.calculate_outstanding_balance()
-
-            messages.success(request, "Payment updated successfully.")
-            return redirect("admin_dashboard")
-    else:
-        form = PaymentForm(instance=payment)
-
-    return render(request, "ecommerce/payment_form.html", {"form": form, "order": order, "payment": payment})
 
 @login_required
 def payments_list_view(request):
@@ -359,11 +371,14 @@ def payments_list_view(request):
 
     return render(request, 'ecommerce/payments_list.html', {'payments': payments})
 
+
 @staff_member_required
 def add_product(request):
     if request.method == "POST":
         form = ProductForm(request.POST)
-        formset = ProductImageFormSet(request.POST, request.FILES, queryset=ProductImage.objects.none())
+        formset = ProductImageFormSet(
+            request.POST, request.FILES, queryset=ProductImage.objects.none()
+        )
         if form.is_valid() and formset.is_valid():
             product = form.save()
             for f in formset.cleaned_data:
@@ -373,7 +388,9 @@ def add_product(request):
     else:
         form = ProductForm()
         formset = ProductImageFormSet(queryset=ProductImage.objects.none())
+
     return render(request, "ecommerce/product_form.html", {"form": form, "formset": formset})
+
 
 ProductImageFormSet = inlineformset_factory(
     Product,
@@ -382,6 +399,7 @@ ProductImageFormSet = inlineformset_factory(
     extra=1,
     can_delete=True
 )
+
 
 def update_product(request, pk):
     product = get_object_or_404(Product, pk=pk)
@@ -393,10 +411,8 @@ def update_product(request, pk):
         formset.save()
         return redirect("admin_dashboard")
 
-    return render(request, "ecommerce/product_form.html", {
-        "form": form,
-        "formset": formset,
-    })
+    return render(request, "ecommerce/product_form.html", {"form": form, "formset": formset})
+
 
 @staff_member_required
 def delete_product(request, pk):
@@ -406,9 +422,11 @@ def delete_product(request, pk):
         return redirect("admin_dashboard")
     return render(request, "ecommerce/confirm_delete.html", {"product": product})
 
+
 def product_list(request):
     products = Product.objects.all().prefetch_related('images')
     return render(request, "ecommerce/product_list.html", {"products": products})
+
 
 @staff_member_required
 def admin_products_list(request):
@@ -416,6 +434,7 @@ def admin_products_list(request):
     in_stock_count = products.filter(stock__gt=0).count()
     out_of_stock_count = products.filter(stock=0).count()
     total_value = sum(p.price * p.stock for p in products)
+
     return render(request, 'ecommerce/admin_products_list.html', {
         'products': products,
         'in_stock_count': in_stock_count,
