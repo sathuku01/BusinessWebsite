@@ -315,37 +315,64 @@ def update_payment(request, pk):
     order = payment.order
 
     if request.method == "POST":
-        try:
-            payment.amount = Decimal(request.POST.get("amount"))
-            payment.status = request.POST.get("status")
+        form = PaymentForm(request.POST, instance=payment)
+        if form.is_valid():
+            payment = form.save(commit=False)
+            # Note: we don't change created_by on update
             payment.save()
             messages.success(request, f"Payment #{payment.id} updated successfully.")
             return redirect("admin_dashboard")
-        except Exception as e:
-            messages.error(request, f"Error updating payment: {e}")
-            return render(request, "ecommerce/payment_form.html", {
-                "form": PaymentForm(instance=payment),
-                "payment": payment,
-                "order": order,
-            })
+        else:
+            messages.error(request, "Please correct the errors below.")
+    else:
+        form = PaymentForm(instance=payment)
+
+    # Get all orders for the dropdown
+    orders = Order.objects.all().select_related('customer__user').order_by('-order_date')
+    
+    return render(request, "ecommerce/payment_form.html", {
+        "form": form,
+        "payment": payment,
+        "order": order,
+        "orders": orders,
+    })
 
 
 @staff_member_required
-def add_payment(request, order_id):
-    order = get_object_or_404(Order, pk=order_id)
+def delete_payment(request, pk):
+    payment = get_object_or_404(Payment, pk=pk)
+    
+    if request.method == "POST":
+        payment_id = payment.id
+        payment.delete()
+        messages.success(request, f"Payment #{payment_id} deleted successfully.")
+        return redirect("payment_list")
+    
+    return render(request, "ecommerce/confirm_delete.html", {
+        "payment": payment,
+        "order": payment.order,
+    })
+
+
+@staff_member_required
+def add_payment(request, order_id=None):
+    if order_id:
+        order = get_object_or_404(Order, pk=order_id)
+    else:
+        order = None
 
     if request.method == "POST":
         form = PaymentForm(request.POST)
         if form.is_valid():
             payment = form.save(commit=False)
-            payment.order = order
+            payment.created_by = request.user
             payment.save()
 
             debt, _ = Debt.objects.get_or_create(
-                order=order,
-                customer=order.customer,
+                order=payment.order,
+                customer=payment.order.customer,
                 defaults={
-                    "outstanding_balance": order.get_total_amount(),
+                    "outstanding_balance": payment.order.get_total_amount(),
                     "is_paid": False,
                     "paid_at": None,
                 },
@@ -357,19 +384,15 @@ def add_payment(request, order_id):
 
     else:
         form = PaymentForm()
+        if order_id:
+            # If we have an order_id from URL, we set the order in the form as initial and disable it
+            form.fields['order'].initial = order
+            form.fields['order'].widget.attrs['disabled'] = True
 
-    return render(request, "ecommerce/payment_form.html", {"form": form, "order": order})
-
-
-@login_required
-def payments_list_view(request):
-    payments = Payment.objects.filter(order__customer=request.user.customer)
-
-    payment_status = request.GET.get('payment_status')
-    if payment_status:
-        payments = payments.filter(status=payment_status)
-
-    return render(request, 'ecommerce/payments_list.html', {'payments': payments})
+    # Get all orders for the dropdown
+    orders = Order.objects.all().select_related('customer__user').order_by('-order_date')
+    
+    return render(request, "ecommerce/payment_form.html", {"form": form, "order": order, "orders": orders})
 
 
 @staff_member_required

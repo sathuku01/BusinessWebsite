@@ -121,7 +121,7 @@ class Payment(models.Model):
     amount = models.DecimalField(max_digits=10, decimal_places=2)
     payment_method = models.CharField(
         max_length=50,
-        choices=[('cash','Cash'), ('mpesa', 'M-pesa')],
+        choices=[('cash','Cash'), ('mpesa', 'M-pesa'), ('bank', 'Bank Transfer')],
         default='cash'
     )
     status = models.CharField(
@@ -129,6 +129,8 @@ class Payment(models.Model):
         choices=[('pending', 'Pending'), ('completed', 'Completed')],
         default='pending'
     )
+    notes = models.TextField(blank=True)
+    created_by = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True, related_name='payments_created')
 
     def clean(self):
         # Exclude current payment when editing
