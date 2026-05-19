@@ -128,29 +128,38 @@ def dashboard_view(request):
 
 @login_required
 def orders_list_view(request):
-    try:
-        customer = Customer.objects.get(user=request.user)
-        orders = Order.objects.filter(customer=customer).order_by('-order_date')
-
+    if request.user.is_staff:
+        orders = Order.objects.select_related('customer__user').order_by('-order_date')
+        customers = Customer.objects.select_related('user').all()
         total_orders = orders.count()
         pending_orders = orders.filter(status='pending').count()
         delivered_orders = orders.filter(status='delivered').count()
         outstanding_total = sum(o.get_outstanding_balance() for o in orders)
+        is_admin = True
+    else:
+        try:
+            customer = Customer.objects.get(user=request.user)
+            orders = Order.objects.filter(customer=customer).order_by('-order_date')
+        except Customer.DoesNotExist:
+            orders = []
+        total_orders = orders.count()
+        pending_orders = orders.filter(status='pending').count()
+        delivered_orders = orders.filter(status='delivered').count()
+        outstanding_total = sum(o.get_outstanding_balance() for o in orders)
+        is_admin = False
 
-    except Customer.DoesNotExist:
-        orders = []
-        total_orders = 0
-        pending_orders = 0
-        delivered_orders = 0
-        outstanding_total = 0
-
-    return render(request, 'ecommerce/orders_list.html', {
+    context = {
         'orders': orders,
         'total_orders': total_orders,
         'pending_orders': pending_orders,
         'delivered_orders': delivered_orders,
-'outstanding_total': outstanding_total,
-    })
+        'outstanding_total': outstanding_total,
+        'is_admin': is_admin,
+    }
+    if request.user.is_staff:
+        context['customers'] = customers
+
+    return render(request, 'ecommerce/orders_list.html', context)
 
 
 @login_required
@@ -161,20 +170,25 @@ def order_detail_view(request, pk):
 
 @login_required
 def debts_list_view(request):
-    try:
-        customer = Customer.objects.get(user=request.user)
-        debts = Debt.objects.filter(customer=customer).select_related('order')
-        total_outstanding = sum(d.outstanding_balance for d in debts if not d.is_paid)
-        paid_count = debts.filter(is_paid=True).count()
-    except Customer.DoesNotExist:
-        debts = []
-        total_outstanding = 0
-        paid_count = 0
+    if request.user.is_staff:
+        debts = Debt.objects.select_related('customer__user', 'order').order_by('-outstanding_balance')
+        is_admin = True
+    else:
+        try:
+            customer = Customer.objects.get(user=request.user)
+            debts = Debt.objects.filter(customer=customer).select_related('order')
+        except Customer.DoesNotExist:
+            debts = []
+        is_admin = False
+
+    total_outstanding = sum(d.outstanding_balance for d in debts if not d.is_paid)
+    paid_count = debts.filter(is_paid=True).count()
 
     return render(request, 'ecommerce/debts_list.html', {
         'debts': debts,
         'total_outstanding': total_outstanding,
         'paid_count': paid_count,
+        'is_admin': is_admin,
     })
 
 
@@ -534,8 +548,55 @@ def delete_product(request, pk):
     product = get_object_or_404(Product, pk=pk)
     if request.method == "POST":
         product.delete()
+        messages.success(request, f"Product '{product.name}' deleted successfully.")
         return redirect("admin_dashboard")
-    return render(request, "ecommerce/confirm_delete.html", {"product": product})
+    return render(request, "ecommerce/confirm_delete.html", {
+        "product": product,
+        "object_name": product.name,
+        "cancel_url": '/admin-dashboard/products/'
+    })
+
+
+@staff_member_required
+def admin_update_order(request, pk):
+    order = get_object_or_404(Order, pk=pk)
+    
+    if request.method == "POST":
+        status = request.POST.get("status")
+        # Validate that status is one of the allowed choices
+        valid_statuses = [choice[0] for choice in order.status.field.choices]
+        if status in valid_statuses:
+            order.status = status
+            order.save()
+            messages.success(request, f"Order #{order.pk} status updated to {status}.")
+            return redirect('orders_list')
+        else:
+            messages.error(request, "Invalid status selected.")
+            return redirect('admin_update_order', pk=pk)
+    
+    # GET request
+    status_choices = order.status.field.choices
+    return render(request, 'ecommerce/admin_order_edit.html', {
+        'order': order,
+        'status_choices': status_choices
+    })
+
+
+@staff_member_required
+def admin_delete_order(request, pk):
+    order = get_object_or_404(Order, pk=pk)
+    
+    if request.method == "POST":
+        order.delete()
+        messages.success(request, f"Order #{order.pk} deleted.")
+        return redirect('orders_list')
+    
+    # GET request
+    return render(request, 'ecommerce/confirm_delete.html', {
+        'object': order,
+        'object_name': f'Order #{order.pk}',
+        'cancel_url': '/orders/list'
+    })
 
 
 def product_list(request):
