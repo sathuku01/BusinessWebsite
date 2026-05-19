@@ -79,6 +79,29 @@
   </div>
 </div>
 
+
+<!-- SUMMARY STAT CARDS -->
+<div class="row g-3 mb-4">
+  <div class="col-md-4">
+    <div class="card shadow-sm rounded-3 p-4">
+      <div class="stat-label mb-1">Total Collected</div>
+      <div class="stat-value">KSh {{ total_collected|floatformat:0 }}</div>
+    </div>
+  </div>
+  <div class="col-md-4">
+    <div class="card shadow-sm rounded-3 p-4">
+      <div class="stat-label mb-1">This Month</div>
+      <div class="stat-value">KSh {{ payments_this_month|floatformat:0 }}</div>
+    </div>
+  </div>
+  <div class="col-md-4">
+    <div class="card shadow-sm rounded-3 p-4">
+      <div class="stat-label mb-1">Most Used Method</div>
+      <div class="stat-value">{{ most_used_method|capfirst }}</div>
+    </div>
+  </div>
+</div>
+
 <!-- FILTER BAR -->
 <div class="card mb-4 p-3">
   <div class="d-flex flex-wrap gap-2 align-items-center">

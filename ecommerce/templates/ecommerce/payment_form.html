@@ -23,9 +23,9 @@
           <i class="bi bi-receipt me-2"></i>Order Information
         </div>
         <div class="card-body p-4">
-          <div class="mb-3">
-            <label class="form-label">Order <span style="color:#EF4444;">*</span></label>
-            <div class="input-group">
+     <div class="mb-3">
+             <label class="form-label">Order <span style="color:#EF4444;">*</span><small id="outstandingBalance" class="text-muted ms-2"></small></label>
+             <div class="input-group">
               <span class="input-group-text"
                     style="background:#F9FAFB;border:1px solid #E5E7EB;
                            border-right:none;border-radius:8px 0 0 8px;
@@ -74,8 +74,9 @@
                 <input type="number" name="amount" class="form-control"
                        placeholder="0.00" step="0.01" min="0"
                        value="{{ payment.amount|default:'' }}" required>
-              </div>
-            </div>
+               </div>
+               <div id="amountWarning" class="alert alert-warning d-none mt-2">Amount exceeds outstanding balance. Admin override allowed.</div>
+             </div>
             <div class="col-md-6">
               <label class="form-label">Payment Method <span style="color:#EF4444;">*</span></label>
               <select name="payment_method" class="form-select" required>
@@ -168,6 +169,47 @@
       </div>
     </div>
     {% endif %}
-  </div>
-</div>
+   </div>
+ </div>
+
+ <script>
+   const orderSelect = document.querySelector('select[name="order"]');
+   const amountInput = document.querySelector('input[name="amount"]');
+   const outstandingEl = document.getElementById('outstandingBalance');
+
+   if (orderSelect && amountInput) {
+     orderSelect.addEventListener('change', function() {
+       const orderId = this.value;
+       if (!orderId) {
+         outstandingEl.textContent = '';
+         outstandingEl.dataset.value = '0';
+         return;
+       }
+       fetch('/api/orders/' + orderId + '/')
+         .then(function(r) { return r.json(); })
+         .then(function(data) {
+           const bal = parseFloat(data.outstanding_balance || 0);
+           outstandingEl.textContent = 'Outstanding: KSh ' + bal.toLocaleString();
+           outstandingEl.dataset.value = bal;
+         })
+         .catch(function() {
+           outstandingEl.textContent = '';
+           outstandingEl.dataset.value = '0';
+         });
+     });
+   }
+
+   if (amountInput && outstandingEl) {
+     amountInput.addEventListener('input', function() {
+       const amount = parseFloat(this.value) || 0;
+       const outstanding = parseFloat(outstandingEl.dataset.value || 0);
+       var warning = document.getElementById('amountWarning');
+       if (amount > outstanding && outstanding > 0) {
+         warning.classList.remove('d-none');
+       } else {
+         warning.classList.add('d-none');
+       }
+     });
+   }
+ </script>
 {% endblock %}

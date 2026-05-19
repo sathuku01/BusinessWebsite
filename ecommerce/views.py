@@ -377,13 +377,25 @@ def payment_list_view(request):
         'order', 'order__customer', 'order__customer__user'
     )
 
-    total_collected = sum(p.amount for p in payments)
+    total_collected = Payment.objects.aggregate(total=Sum('amount'))['total'] or 0
+    today = date.today()
+    payments_this_month = Payment.objects.filter(
+        payment_date__year=today.year,
+        payment_date__month=today.month,
+    ).aggregate(total=Sum('amount'))['total'] or 0
+    method_counts_raw = Payment.objects.values('payment_method').annotate(count=Count('id'))
+    method_counts = {item['payment_method']: item['count'] for item in method_counts_raw}
+    most_used_method = max(method_counts, key=method_counts.get) if method_counts else 'N/A'
+
     mpesa_count = payments.filter(payment_method='mpesa').count()
     cash_count = payments.filter(payment_method='cash').count()
 
     return render(request, 'ecommerce/payment_list.html', {
         'payments': payments,
         'total_collected': total_collected,
+        'payments_this_month': payments_this_month,
+        'method_counts': method_counts,
+        'most_used_method': most_used_method,
         'mpesa_count': mpesa_count,
         'cash_count': cash_count,
     })
