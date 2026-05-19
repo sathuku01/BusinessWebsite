@@ -7,9 +7,11 @@
     <h1>{% if is_admin %}All Orders{% else %}My Orders{% endif %}</h1>
     <p>{% if is_admin %}Track and manage all orders{% else %}Track and manage all your orders{% endif %}</p>
   </div>
+  {% if not is_admin %}
   <a href="{% url 'order_product' %}" class="btn btn-primary">
     <i class="bi bi-plus-lg me-1"></i> New Order
   </a>
+  {% endif %}
 </div>
 
 <!-- SUMMARY CARDS -->
@@ -155,20 +157,22 @@
             </td>
           </tr>
           {% empty %}
-          <tr>
-            <td colspan="9" class="text-center py-5" style="color:#6B7280;">
-              <i class="bi bi-inbox fs-1 d-block mb-3" style="color:#D1D5DB;"></i>
-              <div style="font-weight:600;font-size:1rem;margin-bottom:4px;">
-                No orders yet
-              </div>
-              <div style="font-size:0.875rem;margin-bottom:1rem;">
-                Place your first order to get started
-              </div>
-              <a href="{% url 'order_product' %}" class="btn btn-primary btn-sm">
-                <i class="bi bi-plus-lg me-1"></i> Place Order
-              </a>
-            </td>
-          </tr>
+           <tr>
+             <td colspan="9" class="text-center py-5" style="color:#6B7280;">
+               <i class="bi bi-inbox fs-1 d-block mb-3" style="color:#D1D5DB;"></i>
+               <div style="font-weight:600;font-size:1rem;margin-bottom:4px;">
+                 No orders yet
+               </div>
+               <div style="font-size:0.875rem;margin-bottom:1rem;">
+                 Place your first order to get started
+               </div>
+               {% if not is_admin %}
+               <a href="{% url 'order_product' %}" class="btn btn-primary btn-sm">
+                 <i class="bi bi-plus-lg me-1"></i> Place Order
+               </a>
+               {% endif %}
+             </td>
+           </tr>
           {% endfor %}
         </tbody>
       </table>

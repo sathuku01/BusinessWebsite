@@ -164,7 +164,19 @@ def orders_list_view(request):
 
 @login_required
 def order_detail_view(request, pk):
-    order = get_object_or_404(Order, pk=pk, customer=request.user.customer)
+    if request.user.is_staff:
+        order = get_object_or_404(Order, pk=pk)
+    else:
+        try:
+            customer = Customer.objects.get(user=request.user)
+        except Customer.DoesNotExist:
+            messages.error(request, 'Customer profile not found.')
+            return redirect('dashboard')
+        order = get_object_or_404(Order, pk=pk, customer=customer)
+    # Attach total attribute to each order item for template use
+    items = order.items.all()
+    for item in items:
+        item.total = item.price * item.quantity
     return render(request, 'ecommerce/order_detail.html', {'order': order})
 
 
@@ -639,7 +651,7 @@ def admin_update_order(request, pk):
     if request.method == "POST":
         status = request.POST.get("status")
         # Validate that status is one of the allowed choices
-        valid_statuses = [choice[0] for choice in order.status.field.choices]
+        valid_statuses = [choice[0] for choice in Order._meta.get_field('status').choices]
         if status in valid_statuses:
             order.status = status
             order.save()
@@ -650,7 +662,7 @@ def admin_update_order(request, pk):
             return redirect('admin_update_order', pk=pk)
     
     # GET request
-    status_choices = order.status.field.choices
+    status_choices = Order._meta.get_field('status').choices
     return render(request, 'ecommerce/admin_order_edit.html', {
         'order': order,
         'status_choices': status_choices
