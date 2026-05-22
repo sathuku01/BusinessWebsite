@@ -9,7 +9,8 @@ from rest_framework.permissions import IsAuthenticated
 from django.contrib.auth import get_user_model
 from django.db import transaction, IntegrityError
 
-from .models import Customer, Product, Order, OrderItem, Payment, Debt, ProductImage, StockAdjustment
+from .models import Customer, Product, Order, OrderItem, Payment, Debt, ProductImage, StockAdjustment, Cart, CartItem
+
 from .forms import OrderForm, PaymentForm, ProductForm, ProductImageFormSet, CustomUserCreationForm, CustomAuthenticationForm
 from .serializers import (
     CustomerSerializer, ProductSerializer, OrderSerializer,
@@ -704,3 +705,137 @@ def admin_products_list(request):
         'out_of_stock_count': out_of_stock_count,
         'total_value': total_value,
     })
+
+
+@login_required
+def cart_view(request):
+    try:
+        customer = Customer.objects.get(user=request.user)
+        cart, created = Cart.objects.get_or_create(customer=customer)
+        items = cart.items.select_related('product').all()
+    except Customer.DoesNotExist:
+        cart = None
+        items = []
+    return render(request, 'ecommerce/cart.html', {
+        'cart': cart,
+        'items': items,
+    })
+
+
+@login_required
+def add_to_cart(request, product_id):
+    if request.method == 'POST':
+        try:
+            customer = Customer.objects.get(user=request.user)
+            product = Product.objects.get(id=product_id)
+            cart, created = Cart.objects.get_or_create(customer=customer)
+            cart_item, item_created = CartItem.objects.get_or_create(
+                cart=cart, product=product
+            )
+            if not item_created:
+                if cart_item.quantity < product.stock:
+                    cart_item.quantity += 1
+                    cart_item.save()
+            messages.success(
+                request, f"{product.name} added to cart!"
+            )
+        except Customer.DoesNotExist:
+            messages.error(request, "Customer profile not found.")
+        except Product.DoesNotExist:
+            messages.error(request, "Product not found.")
+    return redirect('cart_view')
+
+
+@login_required
+def remove_from_cart(request, item_id):
+    try:
+        customer = Customer.objects.get(user=request.user)
+        cart_item = CartItem.objects.get(
+            id=item_id, cart__customer=customer
+        )
+        cart_item.delete()
+        messages.success(request, "Item removed from cart.")
+    except CartItem.DoesNotExist:
+        messages.error(request, "Item not found.")
+    return redirect('cart_view')
+
+
+@login_required
+def update_cart_item(request, item_id):
+    if request.method == 'POST':
+        quantity = int(request.POST.get('quantity', 1))
+        try:
+            customer = Customer.objects.get(user=request.user)
+            cart_item = CartItem.objects.get(
+                id=item_id, cart__customer=customer
+            )
+            if quantity > 0 and quantity <= cart_item.product.stock:
+                cart_item.quantity = quantity
+                cart_item.save()
+            elif quantity == 0:
+                cart_item.delete()
+                messages.success(request, "Item removed from cart.")
+        except CartItem.DoesNotExist:
+            messages.error(request, "Item not found.")
+    return redirect('cart_view')
+
+
+@login_required
+def checkout_from_cart(request):
+    if request.method == 'POST':
+        try:
+            customer = Customer.objects.get(user=request.user)
+            cart = Cart.objects.get(customer=customer)
+            items = cart.items.select_related('product').all()
+
+            if not items:
+                messages.error(request, "Your cart is empty.")
+                return redirect('cart_view')
+
+            # Validate stock for all items first
+            for item in items:
+                if item.quantity > item.product.stock:
+                    messages.error(
+                        request,
+                        f"Not enough stock for {item.product.name}."
+                    )
+                    return redirect('cart_view')
+
+            # Create one order with all cart items
+            order = Order.objects.create(
+                customer=customer,
+                status='pending'
+            )
+            for item in items:
+                OrderItem.objects.create(
+                    order=order,
+                    product=item.product,
+                    quantity=item.quantity,
+                    price=item.product.price
+                )
+                # Deduct stock
+                item.product.stock -= item.quantity
+                item.product.save()
+
+            # Create debt record
+            Debt.objects.create(
+                customer=customer,
+                order=order,
+                outstanding_balance=order.get_total_amount()
+            )
+
+            # Clear the cart
+            cart.items.all().delete()
+
+            messages.success(
+                request,
+                f"Order #{order.id} placed successfully!"
+            )
+            return redirect('order_detail', pk=order.id)
+
+        except Customer.DoesNotExist:
+            messages.error(request, "Customer profile not found.")
+        except Cart.DoesNotExist:
+            messages.error(request, "Cart not found.")
+    return redirect('cart_view')
+

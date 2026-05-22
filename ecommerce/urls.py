@@ -13,8 +13,9 @@ from .views import (
     dashboard_view, orders_list_view, order_detail_view, debts_list_view,
     profile_view, ProfileView, order_product_view, change_password_view,
     custom_login, admin_dashboard, payment_list_view, update_order_status, add_product, update_product, delete_product, product_list, admin_products_list, reports_view,
-    admin_update_order, admin_delete_order, adjust_stock  # newly added
+    admin_update_order, admin_delete_order, adjust_stock, cart_view, add_to_cart, remove_from_cart, update_cart_item, checkout_from_cart
 )
+
 
 router = DefaultRouter()
 router.register(r'customers', CustomerViewSet)
@@ -48,6 +49,14 @@ urlpatterns = [
      path('auth/change-password/', change_password_view, name='change_password'),
     path('order-product/', order_product_view, name='order_product'),
     path('store/products/', product_list, name='product_list'),
+
+    # Cart
+    path('cart/', cart_view, name='cart_view'),
+    path('cart/add/<int:product_id>/', add_to_cart, name='add_to_cart'),
+    path('cart/remove/<int:item_id>/', remove_from_cart, name='remove_from_cart'),
+    path('cart/update/<int:item_id>/', update_cart_item, name='update_cart_item'),
+    path('cart/checkout/', checkout_from_cart, name='checkout_from_cart'),
+
 
 
     # Admin dashboard (protected by @staff_member_required)
