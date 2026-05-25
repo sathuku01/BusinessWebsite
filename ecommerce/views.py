@@ -8,9 +8,12 @@ from rest_framework.response import Response
 from rest_framework.permissions import IsAuthenticated
 from django.contrib.auth import get_user_model
 from django.db import transaction, IntegrityError
+from django.utils import timezone
+from decimal import Decimal
 
 from .models import Customer, Product, Order, OrderItem, Payment, Debt, ProductImage, StockAdjustment
 from .forms import OrderForm, PaymentForm, ProductForm, ProductImageFormSet, CustomUserCreationForm, CustomAuthenticationForm
+
 from .serializers import (
     CustomerSerializer, ProductSerializer, OrderSerializer,
     OrderItemSerializer, PaymentSerializer, DebtSerializer
@@ -472,32 +475,36 @@ def update_order_status(request, pk):
     return redirect("admin_dashboard")
 
 
-@staff_member_required
+@staff_member_required  
 def update_payment(request, pk):
-    payment = get_object_or_404(Payment, pk=pk)
-    order = payment.order
+    payment = get_object_or_404(Payment, id=pk)
+    orders = Order.objects.all().order_by('-order_date')
+    unpaid_orders = [o for o in orders if o.get_outstanding_balance() > 0]
 
-    if request.method == "POST":
-        form = PaymentForm(request.POST, instance=payment)
-        if form.is_valid():
-            payment = form.save(commit=False)
-            # Note: we don't change created_by on update
+    if request.method == 'POST':
+        amount = request.POST.get('amount')
+        payment_method = request.POST.get('payment_method')
+        payment_date = request.POST.get('payment_date')
+
+        if amount and payment_method:
+            payment.amount = amount
+            payment.payment_method = payment_method
+            if payment_date:
+                payment.payment_date = payment_date
             payment.save()
-            messages.success(request, f"Payment #{payment.id} updated successfully.")
-            return redirect("admin_dashboard")
-        else:
-            messages.error(request, "Please correct the errors below.")
-    else:
-        form = PaymentForm(instance=payment)
+            # Update debt
+            try:
+                debt = Debt.objects.get(order=payment.order)
+                debt.calculate_outstanding_balance()
+            except Debt.DoesNotExist:
+                pass
+            messages.success(request, "Payment updated successfully.")
+            return redirect('payment_list')
 
-    # Get all orders for the dropdown
-    orders = Order.objects.all().select_related('customer__user').order_by('-order_date')
-    
-    return render(request, "ecommerce/payment_form.html", {
-        "form": form,
-        "payment": payment,
-        "order": order,
-        "orders": orders,
+    return render(request, 'ecommerce/payment_form.html', {
+        'order': payment.order,
+        'orders': unpaid_orders,
+        'payment': payment,
     })
 
 
@@ -518,44 +525,79 @@ def delete_payment(request, pk):
 
 
 @staff_member_required
-def add_payment(request, order_id=None):
-    if order_id:
-        order = get_object_or_404(Order, pk=order_id)
-    else:
-        order = None
+def add_payment_standalone(request):
+    orders = Order.objects.all().order_by('-order_date')
+    unpaid_orders = [o for o in orders if o.get_outstanding_balance() > 0]
 
-    if request.method == "POST":
-        form = PaymentForm(request.POST)
-        if form.is_valid():
-            payment = form.save(commit=False)
-            payment.created_by = request.user
-            payment.save()
+    if request.method == 'POST':
+        order_id = request.POST.get('order')
+        amount = request.POST.get('amount')
+        payment_method = request.POST.get('payment_method')
+        payment_date = request.POST.get('payment_date')
 
-            debt, _ = Debt.objects.get_or_create(
-                order=payment.order,
-                customer=payment.order.customer,
-                defaults={
-                    "outstanding_balance": payment.order.get_total_amount(),
-                    "is_paid": False,
-                    "paid_at": None,
-                },
+        if order_id and amount and payment_method:
+            order = get_object_or_404(Order, id=order_id)
+            Payment.objects.create(
+                order=order,
+                amount=Decimal(amount),
+                payment_method=payment_method,
+                payment_date=payment_date or timezone.now(),
+                status='completed'
             )
-            debt.calculate_outstanding_balance()
+            try:
+                debt = Debt.objects.get(order=order)
+                debt.calculate_outstanding_balance()
+            except Debt.DoesNotExist:
+                pass
+            messages.success(
+                request,
+                f"Payment of KSh {amount} recorded successfully."
+            )
+            return redirect('payment_list')
+        else:
+            messages.error(request, "Please fill all required fields.")
 
-            messages.success(request, "Payment added successfully.")
-            return redirect("admin_dashboard")
+    return render(request, 'ecommerce/payment_form.html', {
+        'order': None,
+        'orders': unpaid_orders,
+        'payment': None,
+    })
 
-    else:
-        form = PaymentForm()
-        if order_id:
-            # If we have an order_id from URL, we set the order in the form as initial and disable it
-            form.fields['order'].initial = order
-            form.fields['order'].widget.attrs['disabled'] = True
 
-    # Get all orders for the dropdown
-    orders = Order.objects.all().select_related('customer__user').order_by('-order_date')
-    
-    return render(request, "ecommerce/payment_form.html", {"form": form, "order": order, "orders": orders})
+@staff_member_required
+def add_payment(request, order_id=None):
+    order = get_object_or_404(Order, id=order_id)
+    orders = Order.objects.all().order_by('-order_date')
+    # Only show orders with outstanding balance
+    unpaid_orders = [o for o in orders if o.get_outstanding_balance() > 0]
+
+    if request.method == 'POST':
+        amount = request.POST.get('amount')
+        payment_method = request.POST.get('payment_method')
+        payment_date = request.POST.get('payment_date')
+
+        if amount and payment_method:
+            Payment.objects.create(
+                order=order,
+                amount=amount,
+                payment_method=payment_method,
+                payment_date=payment_date or timezone.now(),
+                status='completed'
+            )
+            # Update debt
+            try:
+                debt = Debt.objects.get(order=order)
+                debt.calculate_outstanding_balance()
+            except Debt.DoesNotExist:
+                pass
+            messages.success(request, f"Payment of KSh {amount} recorded successfully.")
+            return redirect('admin_dashboard')
+
+    return render(request, 'ecommerce/payment_form.html', {
+        'order': order,
+        'orders': unpaid_orders,
+        'payment': None,
+    })
 
 
 @staff_member_required

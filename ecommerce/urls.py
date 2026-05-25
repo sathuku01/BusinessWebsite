@@ -8,13 +8,14 @@ from django.shortcuts import redirect
 
 from .views import (
     CustomerViewSet, ProductViewSet, OrderViewSet, OrderItemViewSet,
-    PaymentViewSet, DebtViewSet, add_payment, update_payment, delete_payment,
+    PaymentViewSet, DebtViewSet, add_payment, add_payment_standalone, update_payment, delete_payment,
     register_view, login_view, logout_view,
     dashboard_view, orders_list_view, order_detail_view, debts_list_view,
     profile_view, ProfileView, order_product_view, change_password_view,
     custom_login, admin_dashboard, payment_list_view, update_order_status, add_product, update_product, delete_product, product_list, admin_products_list, reports_view,
     admin_update_order, admin_delete_order, adjust_stock  # newly added
 )
+
 
 router = DefaultRouter()
 router.register(r'customers', CustomerViewSet)
@@ -58,11 +59,14 @@ urlpatterns = [
     path('admin-dashboard/orders/<int:pk>/delete/', admin_delete_order, name='admin_delete_order'),
 
     # Payments
-    path("admin-dashboard/payments/add/", add_payment, name="add_payment"),
-    path("admin-dashboard/orders/<int:order_id>/payments/add/", add_payment, name="add_payment_for_order"),
+    path('admin-dashboard/payments/add/',
+         add_payment_standalone,
+         name='add_payment_standalone'),
+    path("admin-dashboard/orders/<int:order_id>/payments/add/", add_payment, name="add_payment"),
     path("admin-dashboard/payments/", payment_list_view, name="payment_list"),
     path("admin-dashboard/payments/<int:pk>/edit/", update_payment, name="edit_payment"),
     path("admin-dashboard/payments/<int:pk>/delete/", delete_payment, name="delete_payment"),
+
 
 
     # Products
