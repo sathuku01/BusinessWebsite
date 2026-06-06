@@ -610,23 +610,15 @@ def add_product(request):
         if form.is_valid() and formset.is_valid():
             product = form.save()
             for f in formset.cleaned_data:
-                if f and 'image' in f:
+                if f and f.get('image'):
                     ProductImage.objects.create(product=product, image=f['image'])
-            return redirect("admin_dashboard")
+            messages.success(request, f"Product '{product.name}' added successfully.")
+            return redirect("admin_products_list")
     else:
         form = ProductForm()
         formset = ProductImageFormSet(queryset=ProductImage.objects.none())
 
     return render(request, "ecommerce/product_form.html", {"form": form, "formset": formset})
-
-
-ProductImageFormSet = inlineformset_factory(
-    Product,
-    ProductImage,
-    fields=('image',),
-    extra=1,
-    can_delete=True
-)
 
 
 def update_product(request, pk):
@@ -637,9 +629,10 @@ def update_product(request, pk):
     if form.is_valid() and formset.is_valid():
         form.save()
         formset.save()
-        return redirect("admin_dashboard")
+        messages.success(request, f"Product '{product.name}' updated successfully.")
+        return redirect("admin_products_list")
 
-    return render(request, "ecommerce/product_form.html", {"form": form, "formset": formset})
+    return render(request, "ecommerce/product_form.html", {"form": form, "formset": formset, "product": product})
 
 
 @staff_member_required
@@ -648,7 +641,7 @@ def delete_product(request, pk):
     if request.method == "POST":
         product.delete()
         messages.success(request, f"Product '{product.name}' deleted successfully.")
-        return redirect("admin_dashboard")
+        return redirect("admin_products_list")
     return render(request, "ecommerce/confirm_delete.html", {
         "product": product,
         "object_name": product.name,
