@@ -476,8 +476,46 @@ def custom_login(request):
 @require_POST
 def update_order_status(request, pk):
     order = get_object_or_404(Order, pk=pk)
-    order.status = request.POST.get("status")
-    order.save()
+    if request.method == 'POST':
+        new_status = request.POST.get("status")
+        order.status = new_status
+        if new_status == 'delivered':
+            order.shipped_date = timezone.now()
+        order.save()
+        
+        # Update debt when order is delivered
+        if new_status == 'delivered':
+            try:
+                debt = Debt.objects.get(order=order)
+                debt.calculate_outstanding_balance()
+            except Debt.DoesNotExist:
+                pass
+        
+        messages.success(request, f"Order #{order.id} status updated to {new_status}.")
+    return redirect("admin_dashboard")
+
+
+@staff_member_required
+def mark_payment_paid(request, pk):
+    order = get_object_or_404(Order, pk=pk)
+    if request.method == 'POST':
+        # Create a payment record marking the order as fully paid
+        amount = order.get_outstanding_balance()
+        Payment.objects.create(
+            order=order,
+            amount=amount,
+            payment_method='cash',
+            status='completed'
+        )
+        
+        # Update debt
+        try:
+            debt = Debt.objects.get(order=order)
+            debt.calculate_outstanding_balance()
+        except Debt.DoesNotExist:
+            pass
+        
+        messages.success(request, f"Order #{order.id} marked as paid.")
     return redirect("admin_dashboard")
 
 

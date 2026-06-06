@@ -13,7 +13,7 @@ from .views import (
     dashboard_view, orders_list_view, order_detail_view, debts_list_view,
     profile_view, ProfileView, order_product_view, change_password_view,
     custom_login, admin_dashboard, payment_list_view, update_order_status, add_product, update_product, delete_product, product_list, admin_products_list, reports_view,
-    admin_update_order, admin_delete_order, adjust_stock, product_detail  # newly added
+    admin_update_order, admin_delete_order, adjust_stock, product_detail, mark_payment_paid  # newly added
 )
 
 
@@ -57,6 +57,7 @@ urlpatterns = [
     path('admin-dashboard/', admin_dashboard, name='admin_dashboard'),
     path('admin-dashboard/reports/', reports_view, name='reports'),
     path('admin-dashboard/update-order/<int:pk>/', update_order_status, name='update_order_status'),
+    path('admin-dashboard/orders/<int:pk>/mark-paid/', mark_payment_paid, name='mark_payment_paid'),
     path('admin-dashboard/orders/<int:pk>/update/', admin_update_order, name='admin_update_order'),
     path('admin-dashboard/orders/<int:pk>/delete/', admin_delete_order, name='admin_delete_order'),
 
