@@ -96,7 +96,7 @@
   </div>
 </div>
 
-<script id="revenueTrendData" type="application/json">{{ revenue_trend_json }}</script>
+{{ revenue_trend|json_script:"revenueTrendData" }}
 <script>
   const raw = JSON.parse(document.getElementById('revenueTrendData').textContent);
   const labels = raw.map(d => d.month);
