@@ -1,9 +1,7 @@
 from django import forms
-from django.forms import inlineformset_factory, BaseInlineFormSet
-from django.forms.widgets import ClearableFileInput
 from django.contrib.auth.forms import UserCreationForm, AuthenticationForm
 from django.contrib.auth import get_user_model
-from .models import Product, OrderItem, Payment, ProductImage, Customer
+from .models import Product, OrderItem, Payment, Customer
 
 User = get_user_model()
 
@@ -97,43 +95,8 @@ class ProductForm(forms.ModelForm):
         model = Product
         fields = ["name", "description", "price", "stock"]
         widgets = {
-            "name": forms.TextInput(attrs={'class': 'form-control', 'placeholder': 'e.g Samsung Galaxy S22', 'required': True}),
+            "name": forms.TextInput(attrs={'class': 'form-control', 'placeholder': 'e.g Samsung Galaxy S22'}),
             "description": forms.Textarea(attrs={'class': 'form-control', 'rows': 4, 'placeholder': 'Describe the product'}),
-            "price": forms.NumberInput(attrs={'class': 'form-control', 'placeholder': '0.00', 'step': '0.01', 'min': '0', 'required': True}),
-            "stock": forms.NumberInput(attrs={'class': 'form-control', 'placeholder': '0', 'min': '0', 'required': True}),
+            "price": forms.NumberInput(attrs={'class': 'form-control', 'placeholder': '0.00', 'step': '0.01', 'min': '0'}),
+            "stock": forms.NumberInput(attrs={'class': 'form-control', 'placeholder': '0', 'min': '0'}),
         }
-
-
-class CustomImageWidget(ClearableFileInput):
-    template_name = "widgets/custom_image_widget.html"
-
-
-class ProductImageForm(forms.ModelForm):
-    class Meta:
-        model = ProductImage
-        fields = ["image"]
-        widgets = {"image": CustomImageWidget}
-
-    def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
-        self.fields["image"].required = False
-
-
-class ProductImageBaseFormSet(BaseInlineFormSet):
-    def clean(self):
-        super().clean()
-        count = 0
-        for form in self.forms:
-            if self.can_delete and self._should_delete_form(form):
-                continue
-            if form.cleaned_data.get("image"):
-                count += 1
-
-ProductImageFormSet = inlineformset_factory(
-    Product,
-    ProductImage,
-    form=ProductImageForm,
-    formset=ProductImageBaseFormSet,
-    extra=1,
-    can_delete=True
-)
