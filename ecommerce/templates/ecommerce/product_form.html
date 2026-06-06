@@ -70,7 +70,7 @@
                 <div style="border-radius:10px;overflow:hidden;border:1px solid #E5E7EB;">
                   <img src="{{ image.image.url }}" style="width:100%;aspect-ratio:1;object-fit:cover;">
                 </div>
-                <input type="checkbox" name="delete_images" value="{{ image.id }}" id="del_{{ image.id }}" style="display:none;">
+                <input type="checkbox" name="delete_images" value="{{ image.id }}" id="del_{{ image.id }}" class="d-none">
                 <label for="del_{{ image.id }}" class="btn btn-sm btn-danger position-absolute" style="top:6px;right:6px;padding:4px 8px;border-radius:6px;font-size:0.7rem;cursor:pointer;" title="Mark for deletion">
                   <i class="bi bi-trash"></i>
                 </label>
@@ -170,17 +170,17 @@
   }
 
   document.querySelectorAll('[for^="del_"]').forEach(label => {
-    label.addEventListener('click', function() {
+    label.addEventListener('click', function(e) {
+      e.preventDefault();
       const checkbox = document.getElementById(this.getAttribute('for'));
       const imgWrapper = this.closest('.position-relative');
+      checkbox.checked = !checkbox.checked;
       if (checkbox.checked) {
-        checkbox.checked = false;
-        imgWrapper.style.opacity = '1';
-        this.innerHTML = '<i class="bi bi-trash"></i>';
-      } else {
-        checkbox.checked = true;
         imgWrapper.style.opacity = '0.4';
         this.innerHTML = '<i class="bi bi-arrow-counterclockwise"></i>';
+      } else {
+        imgWrapper.style.opacity = '1';
+        this.innerHTML = '<i class="bi bi-trash"></i>';
       }
     });
   });
