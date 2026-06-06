@@ -12,7 +12,7 @@ from django.utils import timezone
 from decimal import Decimal
 
 from .models import Customer, Product, Order, OrderItem, Payment, Debt, ProductImage, StockAdjustment
-from .forms import OrderForm, PaymentForm, ProductForm, ProductImageFormSet, CustomUserCreationForm, CustomAuthenticationForm
+from .forms import OrderForm, PaymentForm, ProductForm, CustomUserCreationForm, CustomAuthenticationForm
 
 from .serializers import (
     CustomerSerializer, ProductSerializer, OrderSerializer,
@@ -29,8 +29,7 @@ from django.views.decorators.http import require_POST
 from django.contrib import messages
 from django.core.exceptions import ValidationError
 from decimal import Decimal
-from django.shortcuts import render,redirect
-from .forms import inlineformset_factory
+from django.shortcuts import render, redirect
 
 # -------------------
 # DRF ViewSets
@@ -344,7 +343,6 @@ def admin_dashboard(request):
         'total_products': total_products,
         'low_stock_products': low_stock_products,
         'revenue_trend': revenue_trend,
-        'revenue_trend_json': revenue_trend_json,
         'recent_payments': recent_payments,
         'top_debtors': top_debtors,
         'order_status_breakdown': order_status_breakdown,
@@ -604,35 +602,35 @@ def add_payment(request, order_id=None):
 def add_product(request):
     if request.method == "POST":
         form = ProductForm(request.POST)
-        formset = ProductImageFormSet(
-            request.POST, request.FILES, queryset=ProductImage.objects.none()
-        )
-        if form.is_valid() and formset.is_valid():
+        if form.is_valid():
             product = form.save()
-            for f in formset.cleaned_data:
-                if f and f.get('image'):
-                    ProductImage.objects.create(product=product, image=f['image'])
+            for image in request.FILES.getlist('images'):
+                ProductImage.objects.create(product=product, image=image)
             messages.success(request, f"Product '{product.name}' added successfully.")
             return redirect("admin_products_list")
     else:
         form = ProductForm()
-        formset = ProductImageFormSet(queryset=ProductImage.objects.none())
 
-    return render(request, "ecommerce/product_form.html", {"form": form, "formset": formset})
+    return render(request, "ecommerce/product_form.html", {"form": form})
 
 
 def update_product(request, pk):
     product = get_object_or_404(Product, pk=pk)
-    form = ProductForm(request.POST or None, instance=product)
-    formset = ProductImageFormSet(request.POST or None, request.FILES or None, instance=product)
+    if request.method == "POST":
+        form = ProductForm(request.POST, instance=product)
+        if form.is_valid():
+            form.save()
+            for image in request.FILES.getlist('images'):
+                ProductImage.objects.create(product=product, image=image)
+            delete_ids = request.POST.getlist('delete_images')
+            if delete_ids:
+                ProductImage.objects.filter(id__in=delete_ids).delete()
+            messages.success(request, f"Product '{product.name}' updated successfully.")
+            return redirect("admin_products_list")
+    else:
+        form = ProductForm(instance=product)
 
-    if form.is_valid() and formset.is_valid():
-        form.save()
-        formset.save()
-        messages.success(request, f"Product '{product.name}' updated successfully.")
-        return redirect("admin_products_list")
-
-    return render(request, "ecommerce/product_form.html", {"form": form, "formset": formset, "product": product})
+    return render(request, "ecommerce/product_form.html", {"form": form, "product": product})
 
 
 @staff_member_required
