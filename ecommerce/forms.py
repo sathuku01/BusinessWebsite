@@ -93,10 +93,12 @@ class PaymentForm(forms.ModelForm):
 class ProductForm(forms.ModelForm):
     class Meta:
         model = Product
-        fields = ["name", "description", "price", "stock"]
+        fields = ["name", "description", "price", "stock", "category", "brand"]
         widgets = {
             "name": forms.TextInput(attrs={'class': 'form-control', 'placeholder': 'e.g Samsung Galaxy S22'}),
             "description": forms.Textarea(attrs={'class': 'form-control', 'rows': 4, 'placeholder': 'Describe the product'}),
             "price": forms.NumberInput(attrs={'class': 'form-control', 'placeholder': '0.00', 'step': '0.01', 'min': '0'}),
             "stock": forms.NumberInput(attrs={'class': 'form-control', 'placeholder': '0', 'min': '0'}),
+            "category": forms.Select(attrs={'class': 'form-select'}),
+            "brand": forms.Select(attrs={'class': 'form-select'}),
         }

@@ -11,7 +11,7 @@ from django.db import transaction, IntegrityError
 from django.utils import timezone
 from decimal import Decimal
 
-from .models import Customer, Product, Order, OrderItem, Payment, Debt, ProductImage, StockAdjustment
+from .models import Customer, Product, Order, OrderItem, Payment, Debt, ProductImage, StockAdjustment, Category, Brand
 from .forms import OrderForm, PaymentForm, ProductForm, CustomUserCreationForm, CustomAuthenticationForm
 
 from .serializers import (
@@ -728,8 +728,32 @@ def admin_delete_order(request, pk):
 
 
 def product_list(request):
+    category_slug = request.GET.get('category')
+    brand_slug = request.GET.get('brand')
+    
     products = Product.objects.all().prefetch_related('images')
-    return render(request, "ecommerce/product_list.html", {"products": products})
+    
+    if category_slug:
+        products = products.filter(category__slug=category_slug)
+    
+    if brand_slug:
+        products = products.filter(brand__slug=brand_slug)
+    
+    categories = Category.objects.all()
+    brands = Brand.objects.all()
+    
+    return render(request, "ecommerce/product_list.html", {
+        "products": products,
+        "categories": categories,
+        "brands": brands,
+        "selected_category": category_slug,
+        "selected_brand": brand_slug,
+    })
+
+
+def product_detail(request, pk):
+    product = get_object_or_404(Product, pk=pk)
+    return render(request, 'ecommerce/product_detail.html', {'product': product})
 
 
 @staff_member_required

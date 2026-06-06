@@ -20,6 +20,18 @@
              placeholder="Search products..."
              style="border:1px solid var(--border);border-left:none;border-radius:0 8px 8px 0;">
     </div>
+    <select id="categoryFilter" class="form-select" style="max-width:180px;">
+      <option value="">All Categories</option>
+      {% for category in categories %}
+        <option value="{{ category.slug }}" {% if selected_category == category.slug %}selected{% endif %}>{{ category.name }}</option>
+      {% endfor %}
+    </select>
+    <select id="brandFilter" class="form-select" style="max-width:180px;">
+      <option value="">All Brands</option>
+      {% for brand in brands %}
+        <option value="{{ brand.slug }}" {% if selected_brand == brand.slug %}selected{% endif %}>{{ brand.name }}</option>
+      {% endfor %}
+    </select>
     <select id="stockFilter" class="form-select" style="max-width:160px;">
       <option value="all">All Stock</option>
       <option value="instock">In Stock</option>
@@ -34,10 +46,23 @@
 <!-- PRODUCT GRID -->
 <div class="row g-3" id="productGrid">
   {% for product in products %}
-  <div class="col-6 col-md-4 col-xl-3 product-item"
-       data-name="{{ product.name|lower }}"
-       data-stock="{{ product.stock }}">
-    <div class="product-card h-100">
+<div class="col-6 col-md-4 col-xl-3 product-item"
+        data-name="{{ product.name|lower }}"
+        data-stock="{{ product.stock }}"
+        data-category="{{ product.category.slug|default:'' }}"
+        data-brand="{{ product.brand.slug|default:'' }}">
+      <div class="product-card h-100">
+        <!-- Product Category/Brand Tags -->
+        {% if product.category or product.brand %}
+        <div class="p-2 pb-0 d-flex gap-1 flex-wrap">
+          {% if product.category %}
+            <span class="badge" style="background:#EEF2FF;color:#4F46E5;font-size:0.7rem;">{{ product.category.name }}</span>
+          {% endif %}
+          {% if product.brand %}
+            <span class="badge" style="background:#FEF3C7;color:#92400E;font-size:0.7rem;">{{ product.brand.name }}</span>
+          {% endif %}
+        </div>
+        {% endif %}
       <!-- Image Gallery -->
       <div class="product-gallery" data-product-id="{{ product.id }}">
         <div class="gallery-container">
@@ -66,7 +91,7 @@
       <!-- Info -->
       <div class="product-info">
         <div class="d-flex justify-content-between align-items-start mb-1">
-          <div class="product-name">{{ product.name }}</div>
+          <a href="{% url 'product_detail' product.id %}" class="product-name text-decoration-none">{{ product.name }}</a>
           {% if product.stock > 0 %}
             <span class="stock-badge" style="background:#D1FAE5;color:#065F46;">
               {{ product.stock }} left
@@ -222,31 +247,50 @@
     });
   });
   
-  // Existing filter functions...
-  const searchInput = document.getElementById('productSearch');
-  const stockFilter = document.getElementById('stockFilter');
-  const items = document.querySelectorAll('.product-item');
-  const countEl = document.getElementById('productCount');
+// Existing filter functions...
+   const searchInput = document.getElementById('productSearch');
+   const categoryFilter = document.getElementById('categoryFilter');
+   const brandFilter = document.getElementById('brandFilter');
+   const stockFilter = document.getElementById('stockFilter');
+   const items = document.querySelectorAll('.product-item');
+   const countEl = document.getElementById('productCount');
 
-  function filterProducts() {
-    const q = searchInput.value.toLowerCase();
-    const stock = stockFilter.value;
-    let visible = 0;
-    items.forEach(item => {
-      const nameMatch = item.dataset.name.includes(q);
-      const stockVal = parseInt(item.dataset.stock);
-      const stockMatch = stock === 'all'
-        || (stock === 'instock' && stockVal > 0)
-        || (stock === 'outofstock' && stockVal === 0);
-      const show = nameMatch && stockMatch;
-      item.style.display = show ? '' : 'none';
-      if (show) visible++;
-    });
-    countEl.textContent = visible;
-  }
+   function filterProducts() {
+     const q = searchInput.value.toLowerCase();
+     const cat = categoryFilter.value;
+     const brand = brandFilter.value;
+     const stock = stockFilter.value;
+     let visible = 0;
+     
+     items.forEach(item => {
+       const nameMatch = item.dataset.name.includes(q);
+       const stockVal = parseInt(item.dataset.stock);
+       const stockMatch = stock === 'all'
+         || (stock === 'instock' && stockVal > 0)
+         || (stock === 'outofstock' && stockVal === 0);
+       
+       const catMatch = !cat || item.dataset.category === cat;
+       const brandMatch = !brand || item.dataset.brand === brand;
+       
+       const show = nameMatch && stockMatch && catMatch && brandMatch;
+       item.style.display = show ? '' : 'none';
+       if (show) visible++;
+     });
+     countEl.textContent = visible;
+   }
+   
+   function applyUrlFilters() {
+     const params = new URLSearchParams();
+     if (categoryFilter.value) params.set('category', categoryFilter.value);
+     if (brandFilter.value) params.set('brand', brandFilter.value);
+     const url = params.toString() ? `?${params.toString()}` : '?';
+     window.history.replaceState({}, '', url);
+   }
 
-  searchInput.addEventListener('input', filterProducts);
-  stockFilter.addEventListener('change', filterProducts);
+   searchInput.addEventListener('input', filterProducts);
+   categoryFilter.addEventListener('change', () => { filterProducts(); applyUrlFilters(); });
+   brandFilter.addEventListener('change', () => { filterProducts(); applyUrlFilters(); });
+   stockFilter.addEventListener('change', filterProducts);
 </script>
 {% endblock %}
 

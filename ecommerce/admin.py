@@ -1,6 +1,17 @@
 from django.contrib import admin
 from django.utils.html import format_html
-from .models import Customer, Product, ProductImage, Order, OrderItem, Payment, Debt
+from .models import Customer, Product, ProductImage, Order, OrderItem, Payment, Debt, Category, Brand
+
+# --- Category & Brand ---
+@admin.register(Category)
+class CategoryAdmin(admin.ModelAdmin):
+    list_display = ('name',)
+    prepopulated_fields = {'slug': ('name',)}
+
+@admin.register(Brand)
+class BrandAdmin(admin.ModelAdmin):
+    list_display = ('name',)
+    prepopulated_fields = {'slug': ('name',)}
 
 # --- Customer ---
 @admin.register(Customer)
@@ -23,9 +34,9 @@ class ProductImageInline(admin.TabularInline):
 # --- Product ---
 @admin.register(Product)
 class ProductAdmin(admin.ModelAdmin):
-    list_display = ("id", "name", "price", "stock")
-    search_fields = ("name",)
-    list_filter = ("price",)
+    list_display = ("id", "name", "category", "brand", "price", "stock")
+    search_fields = ("name", "category__name", "brand__name")
+    list_filter = ("category", "brand", "price")
     inlines = [ProductImageInline] 
 
     def image_preview(self, obj):

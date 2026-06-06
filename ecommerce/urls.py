@@ -13,7 +13,7 @@ from .views import (
     dashboard_view, orders_list_view, order_detail_view, debts_list_view,
     profile_view, ProfileView, order_product_view, change_password_view,
     custom_login, admin_dashboard, payment_list_view, update_order_status, add_product, update_product, delete_product, product_list, admin_products_list, reports_view,
-    admin_update_order, admin_delete_order, adjust_stock  # newly added
+    admin_update_order, admin_delete_order, adjust_stock, product_detail  # newly added
 )
 
 
@@ -49,6 +49,8 @@ urlpatterns = [
      path('auth/change-password/', change_password_view, name='change_password'),
     path('order-product/', order_product_view, name='order_product'),
     path('store/products/', product_list, name='product_list'),
+     path('webcat/', product_list, name='webcat'),
+     path('store/products/<int:pk>/', product_detail, name='product_detail'),
 
 
     # Admin dashboard (protected by @staff_member_required)
