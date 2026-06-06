@@ -64,19 +64,19 @@
           {% if product and product.images.all %}
           <div class="mb-4">
             <label class="form-label">Current Images</label>
-            <div class="row g-2">
-              {% for image in product.images.all %}
-              <div class="col-4 col-md-3 position-relative">
-                <div style="border-radius:10px;overflow:hidden;border:1px solid #E5E7EB;">
-                  <img src="{{ image.image.url }}" style="width:100%;aspect-ratio:1;object-fit:cover;">
-                </div>
-                <input type="checkbox" name="delete_images" value="{{ image.id }}" id="del_{{ image.id }}" class="d-none">
-                <label for="del_{{ image.id }}" class="btn btn-sm btn-danger position-absolute" style="top:6px;right:6px;padding:4px 8px;border-radius:6px;font-size:0.7rem;cursor:pointer;" title="Mark for deletion">
-                  <i class="bi bi-trash"></i>
-                </label>
-              </div>
-              {% endfor %}
-            </div>
+<div class="row g-2">
+               {% for image in product.images.all %}
+               <div class="col-4 col-md-3 position-relative">
+                 <div style="border-radius:10px;overflow:hidden;border:1px solid #E5E7EB;">
+                   <img src="{{ image.image.url }}" style="width:100%;aspect-ratio:1;object-fit:cover;">
+                 </div>
+                 <button type="button" onclick="toggleDelete(this, {{ image.id }})" class="btn btn-sm btn-danger position-absolute delete-btn" style="top:6px;right:6px;padding:4px 8px;border-radius:6px;font-size:0.7rem;cursor:pointer;" title="Mark for deletion" data-image-id="{{ image.id }}">
+                   <i class="bi bi-trash"></i>
+                 </button>
+                 <input type="checkbox" name="delete_images" value="{{ image.id }}" class="d-none delete-checkbox" id="del_{{ image.id }}">
+               </div>
+               {% endfor %}
+             </div>
             <div style="font-size:0.78rem;color:#6B7280;margin-top:8px;"><i class="bi bi-info-circle me-1"></i>Click the trash icon to mark images for deletion.</div>
           </div>
           {% endif %}
@@ -169,20 +169,21 @@
     });
   }
 
-  document.querySelectorAll('[for^="del_"]').forEach(label => {
-    label.addEventListener('click', function(e) {
-      e.preventDefault();
-      const checkbox = document.getElementById(this.getAttribute('for'));
-      const imgWrapper = this.closest('.position-relative');
-      checkbox.checked = !checkbox.checked;
-      if (checkbox.checked) {
-        imgWrapper.style.opacity = '0.4';
-        this.innerHTML = '<i class="bi bi-arrow-counterclockwise"></i>';
-      } else {
-        imgWrapper.style.opacity = '1';
-        this.innerHTML = '<i class="bi bi-trash"></i>';
-      }
-    });
-  });
+  window.toggleDelete = function(btn, imageId) {
+    const imgWrapper = btn.closest('.position-relative');
+    const checkbox = document.getElementById('del_' + imageId);
+    const isMarked = btn.dataset.marked === 'true';
+    if (isMarked) {
+      checkbox.checked = false;
+      imgWrapper.style.opacity = '1';
+      btn.innerHTML = '<i class="bi bi-trash"></i>';
+      btn.dataset.marked = 'false';
+    } else {
+      checkbox.checked = true;
+      imgWrapper.style.opacity = '0.4';
+      btn.innerHTML = '<i class="bi bi-arrow-counterclockwise"></i>';
+      btn.dataset.marked = 'true';
+    }
+  };
 </script>
 {% endblock %}
