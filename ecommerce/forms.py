@@ -96,6 +96,12 @@ class ProductForm(forms.ModelForm):
     class Meta:
         model = Product
         fields = ["name", "description", "price", "stock"]
+        widgets = {
+            "name": forms.TextInput(attrs={'class': 'form-control', 'placeholder': 'e.g Samsung Galaxy S22', 'required': True}),
+            "description": forms.Textarea(attrs={'class': 'form-control', 'rows': 4, 'placeholder': 'Describe the product'}),
+            "price": forms.NumberInput(attrs={'class': 'form-control', 'placeholder': '0.00', 'step': '0.01', 'min': '0', 'required': True}),
+            "stock": forms.NumberInput(attrs={'class': 'form-control', 'placeholder': '0', 'min': '0', 'required': True}),
+        }
 
 
 class CustomImageWidget(ClearableFileInput):
@@ -122,15 +128,12 @@ class ProductImageBaseFormSet(BaseInlineFormSet):
                 continue
             if form.cleaned_data.get("image"):
                 count += 1
-        if count == 0:
-            raise forms.ValidationError("Each product must have at least one image.")
-
 
 ProductImageFormSet = inlineformset_factory(
     Product,
     ProductImage,
     form=ProductImageForm,
     formset=ProductImageBaseFormSet,
-    extra=0,
+    extra=1,
     can_delete=True
 )
