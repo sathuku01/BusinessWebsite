@@ -11,8 +11,8 @@ from django.db import transaction, IntegrityError
 from django.utils import timezone
 from decimal import Decimal
 
-from .models import Customer, Product, Order, OrderItem, Payment, Debt, ProductImage, StockAdjustment, Category, Brand
-from .forms import OrderForm, PaymentForm, ProductForm, CustomUserCreationForm, CustomAuthenticationForm
+from .models import Customer, Product, Order, OrderItem, Payment, Debt, ProductImage, StockAdjustment, Category, Brand, Supplier, Consignment, ConsignmentItem, Expense
+from .forms import OrderForm, PaymentForm, ProductForm, CustomUserCreationForm, CustomAuthenticationForm, ConsignmentForm, ConsignmentItemForm, ExpenseForm, SupplierForm
 
 from .serializers import (
     CustomerSerializer, ProductSerializer, OrderSerializer,
@@ -807,3 +807,138 @@ def admin_products_list(request):
         'out_of_stock_count': out_of_stock_count,
         'total_value': total_value,
     })
+
+
+# -------------------
+# Consignment Views
+# -------------------
+@staff_member_required
+def consignment_list(request):
+    consignments = Consignment.objects.all().prefetch_related('items__product')
+    suppliers = Supplier.objects.all()
+    return render(request, 'ecommerce/consignments.html', {'consignments': consignments, 'suppliers': suppliers})
+
+
+@staff_member_required
+def add_consignment(request):
+    if request.method == 'POST':
+        form = ConsignmentForm(request.POST)
+        if form.is_valid():
+            consignment = form.save()
+            messages.success(request, f"Consignment {consignment.reference_number} created.")
+            return redirect('consignment_list')
+    else:
+        form = ConsignmentForm()
+    
+    return render(request, 'ecommerce/consignment_form.html', {'form': form})
+
+
+@staff_member_required
+def add_supplier(request):
+    if request.method == 'POST':
+        form = SupplierForm(request.POST)
+        if form.is_valid():
+            supplier = form.save()
+            messages.success(request, f"Supplier {supplier.name} added.")
+            return redirect('consignment_list')
+    else:
+        form = SupplierForm()
+    
+    return render(request, 'ecommerce/supplier_form.html', {'form': form})
+
+
+@staff_member_required
+def add_expense(request):
+    if request.method == 'POST':
+        form = ExpenseForm(request.POST)
+        if form.is_valid():
+            expense = form.save(commit=False)
+            expense.recorded_by = request.user
+            expense.save()
+            messages.success(request, f"Expense recorded: {expense.get_category_display()}")
+            return redirect('expense_list')
+    else:
+        form = ExpenseForm()
+    
+    return render(request, 'ecommerce/expense_form.html', {'form': form})
+
+
+@staff_member_required
+def expense_list(request):
+    expenses = Expense.objects.all()
+    return render(request, 'ecommerce/expenses.html', {'expenses': expenses})
+
+
+# -------------------
+# Financial Reports
+# -------------------
+@staff_member_required
+def financial_report(request):
+    from datetime import datetime, timedelta
+    
+    # Get date range from request or default to today
+    start_date = request.GET.get('start_date')
+    end_date = request.GET.get('end_date')
+  
+    today = date.today()
+    if start_date and end_date:
+        start = datetime.strptime(start_date, '%Y-%m-%d').date()
+        end = datetime.strptime(end_date, '%Y-%m-%d').date()
+    else:
+        start = today
+        end = today
+    
+    # Calculate metrics
+    # Opening stock: stock before start_date (need historical tracking)
+    # For now, use current stock minus recent receipts
+    consignments = Consignment.objects.filter(date_received__range=[start, end])
+    stock_received = sum(c.get_total_quantity() for c in consignments)
+    
+    # Purchases = cost from consignments in period
+    total_purchases = sum(c.get_total_cost() for c in consignments)
+    
+    # Sales in period
+    orders = Order.objects.filter(order_date__date__range=[start, end])
+    total_sales = sum(o.get_total_amount() for o in orders)
+    stock_sold = sum(sum(i.quantity for i in o.items.all()) for o in orders)
+    
+    # Expenses in period
+    expenses = Expense.objects.filter(date__range=[start, end])
+    total_expenses = sum(e.amount for e in expenses)
+    
+    # Current stock value (simplified - actual COGS needed)
+    current_stock_value = sum(p.price * p.stock for p in Product.objects.all())
+    
+    # COGS (using average cost or from consignments - simplified)
+    cogs = stock_sold * 0  # Will need unit cost tracking
+    
+    # Calculate average product cost from consignments
+    total_units_received = sum(
+        sum(item.quantity for item in c.items.all())
+        for c in Consignment.objects.all()
+    )
+    total_cost_all = sum(c.get_total_cost() for c in Consignment.objects.all())
+    avg_unit_cost = (total_cost_all / total_units_received) if total_units_received > 0 else 0
+    cogs = stock_sold * avg_unit_cost
+    
+    gross_profit = total_sales - cogs
+    net_profit = gross_profit - total_expenses
+    
+    # Low stock alerts
+    low_stock_products = Product.objects.filter(stock__lte=5, stock__gt=0)
+    
+    context = {
+        'start_date': start,
+        'end_date': end,
+        'stock_received': stock_received,
+        'stock_sold': stock_sold,
+        'total_purchases': total_purchases,
+        'total_sales': total_sales,
+        'cogs': cogs,
+        'gross_profit': gross_profit,
+        'total_expenses': total_expenses,
+        'net_profit': net_profit,
+        'low_stock_products': low_stock_products,
+    }
+    
+    return render(request, 'ecommerce/financial_report.html', context)
