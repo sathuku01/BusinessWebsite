@@ -1,5 +1,6 @@
 import json
-from django.db.models import Sum, Count
+from functools import wraps
+from django.db.models import Sum, Count, Q
 from datetime import date
 from dateutil.relativedelta import relativedelta
 from rest_framework import viewsets
@@ -9,10 +10,23 @@ from rest_framework.permissions import IsAuthenticated
 from django.contrib.auth import get_user_model
 from django.db import transaction, IntegrityError
 from django.utils import timezone
+from django.utils.http import url_has_allowed_host_and_scheme
+from django.contrib.auth.views import redirect_to_login
 from decimal import Decimal
 
 from .models import Customer, Product, Order, OrderItem, Payment, Debt, ProductImage, StockAdjustment, Category, Brand, Supplier, Consignment, ConsignmentItem, Expense
 from .forms import OrderForm, PaymentForm, ProductForm, CustomUserCreationForm, CustomAuthenticationForm, ConsignmentForm, ConsignmentItemForm, ExpenseForm, SupplierForm
+from .cart import (
+    add_item_to_cart,
+    clear_cart,
+    create_order_from_cart,
+    get_cart_for_request,
+    get_or_create_user_cart,
+    merge_guest_cart_into_user_cart,
+    remove_cart_item,
+    set_cart_item_quantity,
+    validate_cart_stock,
+)
 
 from .serializers import (
     CustomerSerializer, ProductSerializer, OrderSerializer,
@@ -23,13 +37,41 @@ from django.contrib.auth import login, authenticate, logout
 from django.contrib.auth.forms import UserCreationForm, AuthenticationForm
 from django.shortcuts import render, redirect, get_object_or_404
 from django.contrib.auth.decorators import login_required
-from django.http import HttpResponseRedirect
+from django.http import HttpResponseRedirect, Http404, HttpResponse
 from django.urls import reverse
 from django.views.decorators.http import require_POST
 from django.contrib import messages
 from django.core.exceptions import ValidationError
-from decimal import Decimal
-from django.shortcuts import render, redirect
+
+# -------------------
+# Helpers
+# -------------------
+def checkout_required(view_func):
+    @wraps(view_func)
+    def wrapped(request, *args, **kwargs):
+        if request.user.is_authenticated:
+            return view_func(request, *args, **kwargs)
+        # Store intended checkout URL to return after successful login/registration
+        request.session['checkout_next'] = request.get_full_path()
+        messages.warning(request, 'Please log in or create an account to complete checkout. Your cart will be saved.')
+        return redirect_to_login(request.get_full_path(), login_url='login')
+    return wrapped
+
+
+def get_safe_redirect_url(request, fallback='dashboard'):
+    redirect_to = (
+        request.POST.get('next')
+        or request.GET.get('next')
+        or request.session.pop('checkout_next', None)
+    )
+    if redirect_to and url_has_allowed_host_and_scheme(
+        url=redirect_to,
+        allowed_hosts={request.get_host()},
+        require_https=request.is_secure(),
+    ):
+        return redirect_to
+    return fallback
+
 
 # -------------------
 # DRF ViewSets
@@ -66,8 +108,9 @@ def register_view(request):
                 with transaction.atomic():
                     user = form.save()
                     login(request, user)
+                    merge_guest_cart_into_user_cart(request, user)
                     messages.success(request, 'Account created successfully! Welcome.')
-                    return redirect('dashboard')
+                    return redirect(get_safe_redirect_url(request, 'dashboard'))
             except IntegrityError:
                 form.add_error(None, "A user with these details already exists.")
             except Exception as e:
@@ -77,7 +120,7 @@ def register_view(request):
     else:
         form = CustomUserCreationForm()
 
-    return render(request, 'auth/register.html', {'form': form})
+    return render(request, 'auth/register.html', {'form': form, 'next': request.GET.get('next', '')})
 
 
 def login_view(request):
@@ -86,13 +129,14 @@ def login_view(request):
         if form.is_valid():
             user = form.get_user()
             login(request, user)
+            merge_guest_cart_into_user_cart(request, user)
             messages.success(request, 'You have been logged in successfully.')
-            return redirect('dashboard')
+            return redirect(get_safe_redirect_url(request, 'dashboard'))
         else:
             messages.error(request, 'Invalid username or password.')
     else:
         form = CustomAuthenticationForm()
-    return render(request, 'auth/login.html', {'form': form})
+    return render(request, 'auth/login.html', {'form': form, 'next': request.GET.get('next', '')})
 
 
 @login_required
@@ -243,47 +287,95 @@ def change_password_view(request):
         field.widget.attrs.update({'class': 'form-control'})
     return render(request, 'ecommerce/change_password.html', {'form': form})
 
-@login_required
 def order_product_view(request):
     product_id = request.GET.get('product_id')
-    initial_product = None
-    if product_id:
-        initial_product = get_object_or_404(Product, pk=product_id)
-        if initial_product.stock <= 0:
-            messages.error(request, f"{initial_product.name} is out of stock.")
-            return redirect('product_list')
-    
+    if not product_id:
+        return redirect('product_list')
+    return add_to_cart_view(request, product_id)
+
+
+def add_to_cart_view(request, product_id):
+    product = get_object_or_404(Product, pk=product_id)
+    if product.stock <= 0:
+        messages.error(request, f"{product.name} is out of stock.")
+        return redirect('product_detail', pk=product.id)
+
+    try:
+        quantity = int(request.POST.get('quantity', request.GET.get('quantity', 1)))
+    except (TypeError, ValueError):
+        quantity = 1
+
+    cart = get_cart_for_request(request)
+    try:
+        add_item_to_cart(cart, product, quantity)
+    except ValidationError as e:
+        messages.error(request, str(e))
+        return HttpResponse(status=400)
+    messages.success(request, f"{product.name} added to cart.")
+    return redirect('cart_detail')
+
+
+
+def cart_detail_view(request):
+    cart = get_cart_for_request(request)
+    return render(request, 'ecommerce/cart.html', {'cart': cart})
+
+
+@require_POST
+def update_cart_item_view(request, pk):
+    cart = get_cart_for_request(request)
+    cart_item = get_object_or_404(CartItem, pk=pk, cart=cart)
+    try:
+        set_cart_item_quantity(cart_item, request.POST.get('quantity', 1))
+        messages.success(request, 'Cart updated.')
+    except (TypeError, ValueError, ValidationError) as exc:
+        messages.error(request, str(exc))
+    return redirect('cart_detail')
+
+
+@require_POST
+def remove_cart_item_view(request, pk):
+    cart = get_cart_for_request(request)
+    cart_item = get_object_or_404(CartItem, pk=pk, cart=cart)
+    remove_cart_item(cart_item)
+    messages.success(request, 'Item removed from cart.')
+    return redirect('cart_detail')
+
+
+@require_POST
+def clear_cart_view(request):
+    cart = get_cart_for_request(request)
+    clear_cart(cart)
+    messages.success(request, 'Cart cleared.')
+    return redirect('cart_detail')
+
+
+@checkout_required
+def checkout_view(request):
+    cart = get_or_create_user_cart(request.user)
+    if not cart.items.exists():
+        messages.warning(request, 'Your cart is empty.')
+        return redirect('cart_detail')
+
+    invalid_items = validate_cart_stock(cart)
+    if invalid_items:
+        messages.error(request, 'Some cart items exceed available stock. Please update your cart before checkout.')
+        return redirect('cart_detail')
+
     if request.method == 'POST':
-        form = OrderForm(request.POST)
-        if form.is_valid():
-            product = form.cleaned_data['product']
-            quantity = form.cleaned_data['quantity']
+        try:
+            order = create_order_from_cart(cart, request.user.customer)
+        except Customer.DoesNotExist:
+            messages.error(request, 'Customer profile not found. Please update your profile before checkout.')
+            return redirect('profile_page')
+        except ValidationError as exc:
+            messages.error(request, str(exc))
+            return redirect('cart_detail')
 
-            if product.stock <= 0:
-                messages.error(request, f"{product.name} is out of stock.")
-                return redirect('orders_list')
+        messages.success(request, f"Order #{order.id} placed successfully.")
+        return redirect('orders_list')
 
-            if quantity > product.stock:
-                messages.error(request, f"Only {product.stock} items left in stock.")
-                return redirect('orders_list')
-
-            order = Order.objects.create(customer=request.user.customer, status='pending')
-
-            order_item = OrderItem(
-                order=order,
-                product=product,
-                quantity=quantity,
-                price=product.price
-            )
-            order_item.save()
-
-            messages.success(request, f"Order #{order.id} placed successfully for {product.name}!")
-            return redirect('orders_list')
-    else:
-        form = OrderForm(initial={'product': initial_product} if initial_product else None)
-
-    return render(request, 'ecommerce/order_product.html', {'form': form, 'preselected_product': initial_product})
-
+    return render(request, 'ecommerce/checkout.html', {'cart': cart, 'invalid_items': invalid_items})
 # -------------------
 # API Profile Endpoint
 # -------------------
@@ -461,15 +553,16 @@ def custom_login(request):
         if form.is_valid():
             user = form.get_user()
             login(request, user)
+            merge_guest_cart_into_user_cart(request, user)
             messages.success(request, 'You have been logged in successfully.')
             if user.is_staff:
-                return redirect('admin_dashboard')
-            return redirect('dashboard')
+                return redirect(get_safe_redirect_url(request, 'admin_dashboard'))
+            return redirect(get_safe_redirect_url(request, 'dashboard'))
         else:
             messages.error(request, 'Invalid username or password.')
     else:
         form = CustomAuthenticationForm()
-    return render(request, "auth/login.html", {"form": form})
+    return render(request, "auth/login.html", {"form": form, "next": request.GET.get('next', '')})
 
 
 @staff_member_required
@@ -768,29 +861,58 @@ def admin_delete_order(request, pk):
 def product_list(request):
     category_slug = request.GET.get('category')
     brand_slug = request.GET.get('brand')
-    
-    products = Product.objects.all().prefetch_related('images')
-    
+    search_query = request.GET.get('q', '').strip()
+    stock_filter = request.GET.get('stock', 'all')
+    min_price = request.GET.get('min_price')
+    max_price = request.GET.get('max_price')
+
+    products = Product.objects.all().prefetch_related('images', 'category', 'brand')
+
     if category_slug:
         products = products.filter(category__slug=category_slug)
-    
+
     if brand_slug:
         products = products.filter(brand__slug=brand_slug)
-    
+
+    if search_query:
+        products = products.filter(
+            Q(name__icontains=search_query)
+            | Q(description__icontains=search_query)
+            | Q(category__name__icontains=search_query)
+            | Q(brand__name__icontains=search_query)
+        )
+
+    if stock_filter == 'instock':
+        products = products.filter(stock__gt=0)
+    elif stock_filter == 'outofstock':
+        products = products.filter(stock=0)
+
+    if min_price not in (None, ''):
+        products = products.filter(price__gte=min_price)
+
+    if max_price not in (None, ''):
+        products = products.filter(price__lte=max_price)
+
+    products = products.order_by('name')
+
     categories = Category.objects.all()
     brands = Brand.objects.all()
-    
+
     return render(request, "ecommerce/product_list.html", {
         "products": products,
         "categories": categories,
         "brands": brands,
-        "selected_category": category_slug,
-        "selected_brand": brand_slug,
+        "selected_category": category_slug or '',
+        "selected_brand": brand_slug or '',
+        "search_query": search_query,
+        "selected_stock": stock_filter,
+        "min_price": min_price or '',
+        "max_price": max_price or '',
     })
 
 
 def product_detail(request, pk):
-    product = get_object_or_404(Product, pk=pk)
+    product = get_object_or_404(Product.objects.prefetch_related('images', 'category', 'brand'), pk=pk)
     return render(request, 'ecommerce/product_detail.html', {'product': product})
 
 
