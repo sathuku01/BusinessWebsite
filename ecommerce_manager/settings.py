@@ -37,6 +37,8 @@ CSRF_TRUSTED_ORIGINS = ['http://127.0.0.1:8000',
     'http://localhost:8000',]
 CSRF_COOKIE_SECURE = False
 SESSION_COOKIE_SECURE = False
+SESSION_COOKIE_AGE = 1209600
+SESSION_SAVE_EVERY_REQUEST = True
 
 # Application definition
 
@@ -73,6 +75,7 @@ TEMPLATES = [
                 'django.template.context_processors.request',
                 'django.contrib.auth.context_processors.auth',
                 'django.contrib.messages.context_processors.messages',
+                'ecommerce.context_processors.cart_summary',
             ],
         },
     },
