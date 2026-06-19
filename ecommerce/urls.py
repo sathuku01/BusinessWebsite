@@ -14,7 +14,8 @@ from .views import (
     profile_view, ProfileView, order_product_view, change_password_view,
     custom_login, admin_dashboard, payment_list_view, update_order_status, add_product, update_product, delete_product, product_list, admin_products_list, reports_view,
     admin_update_order, admin_delete_order, adjust_stock, product_detail, mark_payment_paid,
-    consignment_list, add_consignment, add_supplier, add_expense, expense_list, financial_report  # newly added
+    consignment_list, add_consignment, add_supplier, add_expense, expense_list, financial_report,
+    add_to_cart_view, cart_detail_view, update_cart_item_view, remove_cart_item_view, clear_cart_view, checkout_view
 )
 
 
@@ -49,6 +50,12 @@ urlpatterns = [
     path('profile-page/', profile_view, name='profile_page'),        # template profile
      path('auth/change-password/', change_password_view, name='change_password'),
     path('order-product/', order_product_view, name='order_product'),
+    path('cart/add/<int:product_id>/', add_to_cart_view, name='add_to_cart'),
+    path('cart/', cart_detail_view, name='cart_detail'),
+    path('cart/items/<int:pk>/update/', update_cart_item_view, name='update_cart_item'),
+    path('cart/items/<int:pk>/remove/', remove_cart_item_view, name='remove_cart_item'),
+    path('cart/clear/', clear_cart_view, name='clear_cart'),
+    path('checkout/', checkout_view, name='checkout'),
     path('store/products/', product_list, name='product_list'),
      path('webcat/', product_list, name='webcat'),
      path('store/products/<int:pk>/', product_detail, name='product_detail'),
