@@ -1,0 +1,64 @@
+{% extends "ecommerce/base.html" %}
+{% block title %}Checkout — BizStore{% endblock %}
+
+{% block content %}
+<div class="page-header">
+  <h1>Checkout</h1>
+  <p>Confirm your cart and place your order.</p>
+</div>
+
+<div class="row g-4">
+  <div class="col-lg-8">
+    <div class="card mb-4">
+      <div class="card-header">Order Summary</div>
+      <div class="card-body p-0">
+        <div class="table-responsive">
+          <table class="table mb-0 align-middle">
+            <thead>
+              <tr>
+                <th>Product</th>
+                <th class="text-center">Quantity</th>
+                <th class="text-end">Subtotal</th>
+              </tr>
+            </thead>
+            <tbody>
+              {% for item in cart.items.select_related %}
+              <tr>
+                <td>
+                  <div class="fw-bold">{{ item.product.name }}</div>
+                  <div class="small text-muted">KSh {{ item.product.price }} each</div>
+                </td>
+                <td class="text-center">{{ item.quantity }}</td>
+                <td class="text-end fw-bold">KSh {{ item.subtotal }}</td>
+              </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="col-lg-4">
+    <div class="card mb-4">
+      <div class="card-header">Total</div>
+      <div class="card-body">
+        <div class="d-flex justify-content-between mb-2">
+          <span>Items</span>
+          <strong>{{ cart.item_count }}</strong>
+        </div>
+        <div class="d-flex justify-content-between fs-4 fw-bold">
+          <span>Total</span>
+          <span>KSh {{ cart.total }}</span>
+        </div>
+      </div>
+    </div>
+
+    <form method="post">
+      {% csrf_token %}
+      <button type="submit" class="btn btn-primary w-100">Place Order</button>
+    </form>
+    <a href="{% url 'cart_detail' %}" class="btn btn-outline-secondary w-100 mt-2">Back to Cart</a>
+  </div>
+</div>
+{% endblock %}
