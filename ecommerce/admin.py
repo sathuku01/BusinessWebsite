@@ -50,7 +50,7 @@ class CustomerAdmin(admin.ModelAdmin):
 @admin.register(Cart)
 class CartAdmin(admin.ModelAdmin):
     list_display = ('id', 'user', 'session_key', 'item_count', 'total', 'created_at', 'updated_at')
-    list_filter = ('created_at', 'session_key')
+    list_filter = ('created_at',)
     search_fields = ('user__username', 'session_key')
     readonly_fields = ('item_count', 'total')
 
@@ -59,7 +59,7 @@ class CartAdmin(admin.ModelAdmin):
 class CartItemAdmin(admin.ModelAdmin):
     list_display = ('id', 'cart', 'product', 'quantity', 'subtotal', 'updated_at')
     list_filter = ('product__category',)
-    search_fields = ('cart__session_key', 'cart__user__username', 'product__name')
+    search_fields = ('product__name',)
     autocomplete_fields = ['product']
 
 
