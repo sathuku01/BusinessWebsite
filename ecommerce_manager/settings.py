@@ -8,7 +8,8 @@ https://docs.djangoproject.com/en/5.2/topics/settings/
 
 For the full list of settings and their values, see
 https://docs.djangoproject.com/en/5.2/ref/settings/
-\"""
+
+"""
 
 from pathlib import Path
 import os
@@ -28,7 +29,7 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 SECRET_KEY = os.getenv('DJANGO_SECRET_KEY', 'django-insecure-dev-key-change-in-production')
 
 # SECURITY WARNING: don't run with debug turned on in production!
-DEBUG = os.getenv('DEBUG', 'False').lower() == 'true'
+DEBUG = os.getenv('DEBUG', 'True').lower() == 'true'
 
 ALLOWED_HOSTS = os.getenv('ALLOWED_HOSTS', 'localhost,127.0.0.1').split(',')
 
@@ -38,13 +39,13 @@ CSRF_TRUSTED_ORIGINS = os.getenv('CSRF_TRUSTED_ORIGINS', 'http://localhost:8000,
 CSRF_COOKIE_SECURE = not DEBUG
 SESSION_COOKIE_SECURE = not DEBUG
 SESSION_COOKIE_HTTPONLY = True
-SESSION_COOKIE_AGE = 1209600
+SESSION_COOKIE_AGE = 9600
 SESSION_SAVE_EVERY_REQUEST = True
 
-SECURE_HSTS_SECONDS = 31536000 if not DEBUG else 0
+SECURE_HSTS_SECONDS = 36000 if not DEBUG else 0
 SECURE_HSTS_PRELOAD = not DEBUG
 SECURE_HSTS_INCLUDE_SUBDOMAINS = not DEBUG
-SECURE_SSL_REDIRECT = not DEBUG
+SECURE_SSL_REDIRECT = False # not DEBUG
 SECURE_BROWSER_XSS_FILTER = True
 SECURE_CONTENT_TYPE_NOSNIFF = True
 SECURE_REFERRER_POLICY = 'strict-origin-when-cross-origin'
@@ -58,13 +59,13 @@ INSTALLED_APPS = [
     'django.contrib.sessions',
     'django.contrib.messages',
     'django.contrib.staticfiles',
-    'ecommerce.apps.EcommerceConfig',
-    'rest_framework',
-]
+     'ecommerce.apps.EcommerceConfig',
+     'rest_framework',
+ ]
 
 MIDDLEWARE = [
     'django.middleware.security.SecurityMiddleware',
-    'django_csp.middleware.CSPMiddleware',  # Added CSP middleware
+    'csp.middleware.CSPMiddleware',  # Added CSP middleware
     'django.contrib.sessions.middleware.SessionMiddleware',
     'django.middleware.common.CommonMiddleware',
     'django.middleware.csrf.CsrfViewMiddleware',
@@ -140,7 +141,6 @@ USE_TZ = True
 
 # Static files (CSS, JavaScript, Images)
 # https://docs.djangoproject.com/en/5.2/howto/static-files/
-STATIC_URL = 'static/'
 
 # Default primary key field type
 # https://docs.djangoproject.com/en/5.2/ref/settings/#default-auto-field
