@@ -1,20 +1,84 @@
 from django.db import models
-from django.contrib.auth.models import User
 from django.conf import settings
 from django.core.exceptions import ValidationError
 from django.utils.text import slugify
+from django.contrib.auth.models import AbstractUser
+
+
+class User(AbstractUser):
+    email = models.EmailField(unique=True)
+
+    class Meta:
+        swappable = 'AUTH_USER_MODEL'
+
+    def __str__(self):
+        return self.username
+
+
+class Store(models.Model):
+    name = models.CharField(max_length=100)
+    code = models.CharField(max_length=20, unique=True)
+    address = models.TextField(blank=True)
+    phone = models.CharField(max_length=20, blank=True)
+    email = models.EmailField(blank=True)
+    is_active = models.BooleanField(default=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ['name']
+
+    def __str__(self):
+        return self.name
+
+
+class StaffProfile(models.Model):
+    ROLE_CHOICES = [
+        ('manager', 'Store Manager'),
+        ('admin', 'Admin'),
+    ]
+
+    user = models.OneToOneField(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name='staff_profile'
+    )
+    role = models.CharField(max_length=20, choices=ROLE_CHOICES)
+    store = models.ForeignKey(
+        Store,
+        on_delete=models.PROTECT,
+        related_name='staff',
+        null=True,
+        blank=True
+    )
+    hire_date = models.DateField(auto_now_add=True)
+    is_active = models.BooleanField(default=True)
+
+    class Meta:
+        ordering = ['user__username']
+
+    def __str__(self):
+        return f"{self.user.username} - {self.get_role_display()}"
+
+    @property
+    def is_manager(self):
+        return self.role == 'manager'
+
+    @property
+    def is_admin(self):
+        return self.role == 'admin'
+
 
 class Category(models.Model):
     name = models.CharField(max_length=100, unique=True)
     slug = models.SlugField(max_length=110, unique=True, blank=True)
-    
+
     class Meta:
         verbose_name_plural = "Categories"
         ordering = ['name']
-    
+
     def __str__(self):
         return self.name
-    
+
     def save(self, *args, **kwargs):
         if not self.slug:
             self.slug = slugify(self.name)
@@ -24,13 +88,13 @@ class Category(models.Model):
 class Brand(models.Model):
     name = models.CharField(max_length=100, unique=True)
     slug = models.SlugField(max_length=110, unique=True, blank=True)
-    
+
     class Meta:
         ordering = ['name']
-    
+
     def __str__(self):
         return self.name
-    
+
     def save(self, *args, **kwargs):
         if not self.slug:
             self.slug = slugify(self.name)
@@ -38,8 +102,8 @@ class Brand(models.Model):
 
 
 class Customer(models.Model):
-    user = models.OneToOneField(User, on_delete=models.CASCADE)
-    phone_number= models.CharField(max_length=20,blank =True)
+    user = models.OneToOneField(settings.AUTH_USER_MODEL, on_delete=models.CASCADE)
+    phone_number = models.CharField(max_length=20, blank=True)
     address = models.TextField(blank=True)
     profile_picture = models.ImageField(upload_to='profile_pics/', null=True, blank=True)
 
@@ -54,7 +118,7 @@ class Product(models.Model):
     stock = models.PositiveIntegerField()
     category = models.ForeignKey(Category, on_delete=models.SET_NULL, null=True, blank=True, related_name='products')
     brand = models.ForeignKey(Brand, on_delete=models.SET_NULL, null=True, blank=True, related_name='products')
-
+    store = models.ForeignKey(Store, on_delete=models.PROTECT, related_name='products', null=True, blank=True)
 
     def __str__(self):
         return self.name
@@ -112,7 +176,6 @@ class ProductImage(models.Model):
     product = models.ForeignKey(Product, related_name="images", on_delete=models.CASCADE)
     image = models.ImageField(upload_to="products/", blank=True, null=True)
 
-
     def __str__(self):
         return f"Image for {self.product.name}"
 
@@ -123,6 +186,7 @@ class ProductImage(models.Model):
 
 class Order(models.Model):
     customer = models.ForeignKey(Customer, on_delete=models.CASCADE)
+    store = models.ForeignKey(Store, on_delete=models.PROTECT, related_name='orders', null=True, blank=True)
     order_date = models.DateTimeField(auto_now_add=True)
     shipped_date = models.DateTimeField(null=True, blank=True)
     status = models.CharField(max_length=50, choices=[
@@ -133,7 +197,7 @@ class Order(models.Model):
 
     def __str__(self):
         return f"Order {self.id} by {self.customer.user.username}"
-    
+
     def get_total_amount(self):
         """Calculate total order amount from items"""
         return sum(item.price * item.quantity for item in self.items.all())
@@ -150,7 +214,6 @@ class Order(models.Model):
         balance = self.get_total_amount() - self.get_total_paid()
         return max(balance, 0)
 
-from django.core.exceptions import ValidationError
 
 class OrderItem(models.Model):
     order = models.ForeignKey(Order, related_name='items', on_delete=models.CASCADE)
@@ -220,7 +283,7 @@ class Payment(models.Model):
         default='pending'
     )
     notes = models.TextField(blank=True)
-    created_by = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True, related_name='payments_created')
+    created_by = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, blank=True, related_name='payments_created')
 
     def clean(self):
         # Exclude current payment when editing
@@ -240,14 +303,15 @@ class Payment(models.Model):
         super().save(*args, **kwargs)
         total_paid = sum(p.amount for p in self.order.payments.all())
         if total_paid >= self.order.get_total_amount():
-            # fully paid → mark all as completed
+            # fully paid -> mark all as completed
             self.order.payments.update(status='completed')
         else:
-            # still balance → mark all as pending
+            # still balance -> mark all as pending
             self.order.payments.update(status='pending')
 
     def __str__(self):
         return f"{self.amount} via {self.payment_method} for Order {self.order.id}"
+
 
 class Debt(models.Model):
     customer = models.ForeignKey(Customer, on_delete=models.CASCADE, related_name='debts')
@@ -283,6 +347,7 @@ class Debt(models.Model):
             self.paid_at = None
 
         self.save()
+
     def __str__(self):
         return f"Debt of {self.outstanding_balance} for {self.customer.user.username}"
 
@@ -314,6 +379,7 @@ class Supplier(models.Model):
 class Consignment(models.Model):
     reference_number = models.CharField(max_length=100, unique=True)
     supplier = models.ForeignKey(Supplier, on_delete=models.SET_NULL, null=True, blank=True)
+    store = models.ForeignKey(Store, on_delete=models.PROTECT, related_name='consignments', null=True, blank=True)
     date_received = models.DateField()
     freight_cost = models.DecimalField(max_digits=10, decimal_places=2, default=0)
     customs_tax = models.DecimalField(max_digits=10, decimal_places=2, default=0)
@@ -368,6 +434,7 @@ class Expense(models.Model):
     description = models.CharField(max_length=200, blank=True)
     amount = models.DecimalField(max_digits=10, decimal_places=2)
     date = models.DateField()
+    store = models.ForeignKey(Store, on_delete=models.PROTECT, related_name='expenses', null=True, blank=True)
     recorded_by = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True)
 
     class Meta:
@@ -375,5 +442,3 @@ class Expense(models.Model):
 
     def __str__(self):
         return f"{self.get_category_display()}: KSh {self.amount}"
-    
-

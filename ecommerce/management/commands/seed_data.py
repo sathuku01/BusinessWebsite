@@ -1,8 +1,10 @@
 from django.core.management.base import BaseCommand
-from django.contrib.auth.models import User
-from ecommerce.models import Customer, Product, ProductImage, Order, OrderItem, Payment, Debt, StockAdjustment
+from django.contrib.auth import get_user_model
+from ecommerce.models import Customer, Product, ProductImage, Order, OrderItem, Payment, Debt, StockAdjustment, Store, StaffProfile
 from django.db import transaction
 import sys
+
+User = get_user_model()
 
 class Command(BaseCommand):
     help = 'Seed the database with test data'
@@ -19,6 +21,19 @@ class Command(BaseCommand):
                     self.stdout.write(self.style.ERROR('Seeding cancelled.'))
                     return
 
+            # Create default store
+            store, created = Store.objects.get_or_create(
+                code='MAIN',
+                defaults={
+                    'name': 'Main Store',
+                    'address': 'Nairobi, Kenya',
+                    'phone': '0700000000',
+                    'email': 'main@bizstore.com',
+                }
+            )
+            if created:
+                self.stdout.write(self.style.SUCCESS('Created Main Store'))
+
             # Admin user
             admin, created = User.objects.get_or_create(
                 username='admin',
@@ -33,9 +48,27 @@ class Command(BaseCommand):
             if created:
                 admin.set_password('admin123')
                 admin.save()
-                self.stdout.write(self.style.SUCCESS('Created admin user'))
+                StaffProfile.objects.create(user=admin, role='admin', store=store)
+                self.stdout.write(self.style.SUCCESS('Created admin user with StaffProfile'))
             else:
                 self.stdout.write(self.style.WARNING('Admin user already exists'))
+
+            # Manager user
+            manager, created = User.objects.get_or_create(
+                username='manager',
+                defaults={
+                    'email': 'manager@bizstore.com',
+                    'first_name': 'Store',
+                    'last_name': 'Manager',
+                }
+            )
+            if created:
+                manager.set_password('manager123')
+                manager.save()
+                StaffProfile.objects.create(user=manager, role='manager', store=store)
+                self.stdout.write(self.style.SUCCESS('Created manager user with StaffProfile'))
+            else:
+                self.stdout.write(self.style.WARNING('Manager user already exists'))
 
             # Regular customers
             customers_data = [
@@ -87,7 +120,8 @@ class Command(BaseCommand):
                     name=data['name'],
                     defaults={
                         'price': data['price'],
-                        'stock': data['stock']
+                        'stock': data['stock'],
+                        'store': store,
                     }
                 )
                 products.append(product)
@@ -107,6 +141,7 @@ class Command(BaseCommand):
                     status = status_choices[j % len(status_choices)]
                     order = Order.objects.create(
                         customer=customer,
+                        store=store,
                         status=status
                     )
                     orders_created += 1
@@ -178,6 +213,10 @@ class Command(BaseCommand):
             self.stdout.write('ADMIN LOGIN')
             self.stdout.write('  Username: admin')
             self.stdout.write('  Password: admin123')
+            self.stdout.write('─' * 40)
+            self.stdout.write('MANAGER LOGIN')
+            self.stdout.write('  Username: manager')
+            self.stdout.write('  Password: manager123')
             self.stdout.write('─' * 40)
             self.stdout.write('CUSTOMER LOGINS (password for all: test1234)')
             self.stdout.write('  alice | bob | carol | david | eve')

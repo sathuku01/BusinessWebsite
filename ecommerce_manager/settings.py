@@ -95,12 +95,15 @@ TEMPLATES = [
                 'django.contrib.auth.context_processors.auth',
                 'django.contrib.messages.context_processors.messages',
                 'ecommerce.context_processors.cart_summary',
+                'ecommerce.context_processors.staff_context',
             ],
         },
     },
 ]
 
 WSGI_APPLICATION = 'ecommerce_manager.wsgi.application'
+
+AUTH_USER_MODEL = 'ecommerce.User'
 
 
 # Database
