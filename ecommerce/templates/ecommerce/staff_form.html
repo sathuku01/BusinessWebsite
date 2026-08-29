@@ -1,0 +1,73 @@
+{% extends "ecommerce/base.html" %}
+{% block title %}{% if staff %}Edit Staff{% else %}Add Staff{% endif %} — BizStore{% endblock %}
+
+{% block content %}
+<div class="page-header">
+  <h1>{% if staff %}Edit Staff{% else %}Add New Staff{% endif %}</h1>
+</div>
+
+<div class="card">
+  <div class="card-body">
+    <form method="post">
+      {% csrf_token %}
+      <div class="row g-3">
+        <div class="col-md-6">
+          <label class="form-label">Username</label>
+          <input type="text" name="username" class="form-control" value="{{ staff.user.username|default:'' }}" {% if staff %}readonly{% else %}required{% endif %}>
+        </div>
+        <div class="col-md-6">
+          <label class="form-label">Email</label>
+          <input type="email" name="email" class="form-control" value="{{ staff.user.email|default:'' }}" required>
+        </div>
+        <div class="col-md-6">
+          <label class="form-label">First Name</label>
+          <input type="text" name="first_name" class="form-control" value="{{ staff.user.first_name|default:'' }}" required>
+        </div>
+        <div class="col-md-6">
+          <label class="form-label">Last Name</label>
+          <input type="text" name="last_name" class="form-control" value="{{ staff.user.last_name|default:'' }}" required>
+        </div>
+        <div class="col-md-6">
+          <label class="form-label">{% if staff %}New Password (leave blank to keep current){% else %}Password{% endif %}</label>
+          <input type="password" name="password" class="form-control" {% if not staff %}required{% endif %}>
+        </div>
+        <div class="col-md-6">
+          <label class="form-label">Role</label>
+          <select name="role" class="form-select" required id="id_role">
+            <option value="">Select role</option>
+            <option value="manager" {% if staff and staff.role == 'manager' %}selected{% endif %}>Store Manager</option>
+            <option value="admin" {% if staff and staff.role == 'admin' %}selected{% endif %}>Admin</option>
+          </select>
+        </div>
+        <div class="col-md-6" id="storeField" style="display: none;">
+          <label class="form-label">Store</label>
+          <select name="store" class="form-select">
+            <option value="">Select store</option>
+            {% for store in stores %}
+            <option value="{{ store.pk }}" {% if staff and staff.store.pk == store.pk %}selected{% endif %}>{{ store.name }}</option>
+            {% endfor %}
+          </select>
+        </div>
+        <div class="col-md-6 form-check mt-2" style="margin-top: 1.5rem;">
+          <input type="checkbox" name="is_active" class="form-check-input" id="id_is_active" {% if staff and staff.is_active %}checked{% elif not staff %}checked{% endif %}>
+          <label class="form-check-label" for="id_is_active">Active</label>
+        </div>
+      </div>
+      <div class="mt-4 d-flex gap-2">
+        <button type="submit" class="btn btn-primary">{% if staff %}Update{% else %}Create{% endif %} Staff</button>
+        <a href="{% url 'staff_list' %}" class="btn btn-outline-secondary">Cancel</a>
+      </div>
+    </form>
+  </div>
+</div>
+
+<script>
+document.getElementById('id_role').addEventListener('change', function() {
+  document.getElementById('storeField').style.display = this.value === 'manager' ? 'block' : 'none';
+});
+// Initial check
+document.addEventListener('DOMContentLoaded', function() {
+  document.getElementById('id_role').dispatchEvent(new Event('change'));
+});
+</script>
+{% endblock %}

@@ -15,7 +15,8 @@ from .views import (
     custom_login, admin_dashboard, payment_list_view, update_order_status, add_product, update_product, delete_product, product_list, admin_products_list, reports_view,
     admin_update_order, admin_delete_order, adjust_stock, product_detail, mark_payment_paid,
     consignment_list, add_consignment, add_supplier, add_expense, expense_list, financial_report,
-    add_to_cart_view, cart_detail_view, update_cart_item_view, remove_cart_item_view, clear_cart_view, checkout_view
+    add_to_cart_view, cart_detail_view, update_cart_item_view, remove_cart_item_view, clear_cart_view, checkout_view,
+    staff_list, staff_create, staff_edit, staff_delete
 )
 
 
@@ -87,7 +88,7 @@ urlpatterns = [
     path("admin-dashboard/products/", admin_products_list, name="admin_products_list"),
     path("admin-dashboard/product/<int:pk>/adjust-stock/", adjust_stock, name="adjust_stock"),
 
-    # Consignments & Expenses
+# Consignments & Expenses
     path("admin-dashboard/consignments/", consignment_list, name="consignment_list"),
     path("admin-dashboard/consignment/add/", add_consignment, name="add_consignment"),
     path("admin-dashboard/supplier/add/", add_supplier, name="add_supplier"),
@@ -95,7 +96,11 @@ urlpatterns = [
     path("admin-dashboard/expense/add/", add_expense, name="add_expense"),
     path("admin-dashboard/financial-report/", financial_report, name="financial_report"),
 
-
+    # Staff Management (Admin Only)
+    path("admin-dashboard/staff/", staff_list, name="staff_list"),
+    path("admin-dashboard/staff/add/", staff_create, name="staff_create"),
+    path("admin-dashboard/staff/<int:pk>/edit/", staff_edit, name="staff_edit"),
+    path("admin-dashboard/staff/<int:pk>/delete/", staff_delete, name="staff_delete"),
 
 
     # browsable API login/logout

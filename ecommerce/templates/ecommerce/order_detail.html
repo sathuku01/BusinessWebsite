@@ -23,10 +23,10 @@
         <p><strong>Total:</strong> KSh {{ order.get_total_amount|floatformat:0 }}</p>
         <p><strong>Paid:</strong> KSh {{ order.get_total_paid|floatformat:0 }}</p>
         <p><strong>Balance:</strong> <span class="{% if order.get_outstanding_balance > 0 %}text-danger{% endif %}">KSh {{ order.get_outstanding_balance|floatformat:0 }}</span></p>
-        {% if request.user.is_staff %}
+        {% if is_admin or is_manager %}
           <p><strong>Customer:</strong> {{ order.customer.user.get_full_name|default:order.customer.user.username }}</p>
         {% endif %}
-        {% if request.user.is_staff and order.status != 'delivered' and order.get_outstanding_balance > 0 %}
+        {% if (is_admin or is_manager) and order.status != 'delivered' and order.get_outstanding_balance > 0 %}
           <form method="post" action="{% url 'mark_payment_paid' order.pk %}" class="mt-3">
             {% csrf_token %}
             <button type="submit" class="btn btn-success btn-sm" onclick="return confirm('Mark entire balance as paid?');">
@@ -34,7 +34,7 @@
             </button>
           </form>
         {% endif %}
-        {% if request.user.is_staff and order.status == 'pending' %}
+        {% if (is_admin or is_manager) and order.status == 'pending' %}
           <form method="post" action="{% url 'update_order_status' order.pk %}" class="mt-2">
             {% csrf_token %}
             <input type="hidden" name="status" value="shipped">
@@ -43,7 +43,7 @@
             </button>
           </form>
         {% endif %}
-        {% if request.user.is_staff and order.status == 'shipped' %}
+        {% if (is_admin or is_manager) and order.status == 'shipped' %}
           <form method="post" action="{% url 'update_order_status' order.pk %}" class="mt-2">
             {% csrf_token %}
             <input type="hidden" name="status" value="delivered">

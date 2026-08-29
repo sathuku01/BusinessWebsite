@@ -14,7 +14,7 @@ from django.utils.http import url_has_allowed_host_and_scheme
 from django.contrib.auth.views import redirect_to_login
 from decimal import Decimal
 
-from .models import Customer, Product, Order, OrderItem, Payment, Debt, ProductImage, StockAdjustment, Category, Brand, Supplier, Consignment, ConsignmentItem, Expense
+from .models import Customer, Product, Order, OrderItem, Payment, Debt, ProductImage, StockAdjustment, Category, Brand, Supplier, Consignment, ConsignmentItem, Expense, Store, StaffProfile
 from .forms import OrderForm, PaymentForm, ProductForm, CustomUserCreationForm, CustomAuthenticationForm, ConsignmentForm, ConsignmentItemForm, ExpenseForm, SupplierForm
 from .cart import (
     add_item_to_cart,
@@ -42,6 +42,9 @@ from django.urls import reverse
 from django.views.decorators.http import require_POST
 from django.contrib import messages
 from django.core.exceptions import ValidationError
+
+from .decorators import manager_required, admin_required, store_manager_required
+from .permissions import IsManagerOrAdmin, IsAdmin, IsStoreManager
 
 # -------------------
 # Helpers
@@ -79,26 +82,78 @@ def get_safe_redirect_url(request, fallback='dashboard'):
 class CustomerViewSet(viewsets.ModelViewSet):
     queryset = Customer.objects.all()
     serializer_class = CustomerSerializer
+    permission_classes = [IsAuthenticated]
+
+    def get_queryset(self):
+        user = self.request.user
+        if user.is_superuser or (hasattr(user, 'staff_profile') and user.staff_profile.role == 'admin'):
+            return Customer.objects.all()
+        return Customer.objects.filter(user=user)
+
 
 class ProductViewSet(viewsets.ModelViewSet):
     queryset = Product.objects.all()
     serializer_class = ProductSerializer
+    permission_classes = [IsManagerOrAdmin]
+
+    def get_queryset(self):
+        qs = super().get_queryset()
+        user = self.request.user
+        if hasattr(user, 'staff_profile') and user.staff_profile.role == 'manager':
+            return qs.filter(store=user.staff_profile.store)
+        return qs
+
 
 class OrderViewSet(viewsets.ModelViewSet):
     queryset = Order.objects.all()
     serializer_class = OrderSerializer
+    permission_classes = [IsManagerOrAdmin]
+
+    def get_queryset(self):
+        qs = super().get_queryset()
+        user = self.request.user
+        if hasattr(user, 'staff_profile') and user.staff_profile.role == 'manager':
+            return qs.filter(store=user.staff_profile.store)
+        return qs
+
 
 class OrderItemViewSet(viewsets.ModelViewSet):
     queryset = OrderItem.objects.all()
     serializer_class = OrderItemSerializer
+    permission_classes = [IsManagerOrAdmin]
+
+    def get_queryset(self):
+        qs = super().get_queryset()
+        user = self.request.user
+        if hasattr(user, 'staff_profile') and user.staff_profile.role == 'manager':
+            return qs.filter(order__store=user.staff_profile.store)
+        return qs
+
 
 class PaymentViewSet(viewsets.ModelViewSet):
     queryset = Payment.objects.all()
     serializer_class = PaymentSerializer
+    permission_classes = [IsManagerOrAdmin]
+
+    def get_queryset(self):
+        qs = super().get_queryset()
+        user = self.request.user
+        if hasattr(user, 'staff_profile') and user.staff_profile.role == 'manager':
+            return qs.filter(order__store=user.staff_profile.store)
+        return qs
+
 
 class DebtViewSet(viewsets.ModelViewSet):
     queryset = Debt.objects.all()
     serializer_class = DebtSerializer
+    permission_classes = [IsManagerOrAdmin]
+
+    def get_queryset(self):
+        qs = super().get_queryset()
+        user = self.request.user
+        if hasattr(user, 'staff_profile') and user.staff_profile.role == 'manager':
+            return qs.filter(order__store=user.staff_profile.store)
+        return qs
 
 def register_view(request):
     if request.method == 'POST':
@@ -174,25 +229,29 @@ def dashboard_view(request):
 
 @login_required
 def orders_list_view(request):
-    if request.user.is_staff:
+    user = request.user
+    is_admin = user.is_superuser or (hasattr(user, 'staff_profile') and user.staff_profile.role == 'admin')
+    is_manager = hasattr(user, 'staff_profile') and user.staff_profile.role in ['manager', 'admin']
+    
+    if is_admin:
         orders = Order.objects.select_related('customer__user').order_by('-order_date')
         customers = Customer.objects.select_related('user').all()
-        total_orders = orders.count()
-        pending_orders = orders.filter(status='pending').count()
-        delivered_orders = orders.filter(status='delivered').count()
-        outstanding_total = sum(o.get_outstanding_balance() for o in orders)
-        is_admin = True
+    elif is_manager:
+        store = user.staff_profile.store
+        orders = Order.objects.filter(store=store).select_related('customer__user').order_by('-order_date')
+        customers = Customer.objects.select_related('user').all()
     else:
         try:
-            customer = Customer.objects.get(user=request.user)
+            customer = Customer.objects.get(user=user)
             orders = Order.objects.filter(customer=customer).order_by('-order_date')
         except Customer.DoesNotExist:
             orders = []
-        total_orders = orders.count()
-        pending_orders = orders.filter(status='pending').count()
-        delivered_orders = orders.filter(status='delivered').count()
-        outstanding_total = sum(o.get_outstanding_balance() for o in orders)
-        is_admin = False
+        customers = None
+    
+    total_orders = orders.count()
+    pending_orders = orders.filter(status='pending').count()
+    delivered_orders = orders.filter(status='delivered').count()
+    outstanding_total = sum(o.get_outstanding_balance() for o in orders)
 
     context = {
         'orders': orders,
@@ -201,8 +260,9 @@ def orders_list_view(request):
         'delivered_orders': delivered_orders,
         'outstanding_total': outstanding_total,
         'is_admin': is_admin,
+        'is_manager': is_manager,
     }
-    if request.user.is_staff:
+    if customers:
         context['customers'] = customers
 
     return render(request, 'ecommerce/orders_list.html', context)
@@ -210,34 +270,47 @@ def orders_list_view(request):
 
 @login_required
 def order_detail_view(request, pk):
-    if request.user.is_staff:
+    user = request.user
+    is_admin = user.is_superuser or (hasattr(user, 'staff_profile') and user.staff_profile.role == 'admin')
+    is_manager = hasattr(user, 'staff_profile') and user.staff_profile.role in ['manager', 'admin']
+    
+    if is_admin:
         order = get_object_or_404(Order, pk=pk)
+    elif is_manager:
+        store = user.staff_profile.store
+        order = get_object_or_404(Order, pk=pk, store=store)
     else:
         try:
-            customer = Customer.objects.get(user=request.user)
+            customer = Customer.objects.get(user=user)
         except Customer.DoesNotExist:
             messages.error(request, 'Customer profile not found.')
             return redirect('dashboard')
         order = get_object_or_404(Order, pk=pk, customer=customer)
+    
     # Attach total attribute to each order item for template use
     items = order.items.all()
     for item in items:
         item.total = item.price * item.quantity
-    return render(request, 'ecommerce/order_detail.html', {'order': order})
+    return render(request, 'ecommerce/order_detail.html', {'order': order, 'is_admin': is_admin, 'is_manager': is_manager})
 
 
 @login_required
 def debts_list_view(request):
-    if request.user.is_staff:
+    user = request.user
+    is_admin = user.is_superuser or (hasattr(user, 'staff_profile') and user.staff_profile.role == 'admin')
+    is_manager = hasattr(user, 'staff_profile') and user.staff_profile.role in ['manager', 'admin']
+    
+    if is_admin:
         debts = Debt.objects.select_related('customer__user', 'order').order_by('-outstanding_balance')
-        is_admin = True
+    elif is_manager:
+        store = user.staff_profile.store
+        debts = Debt.objects.filter(order__store=store).select_related('customer__user', 'order').order_by('-outstanding_balance')
     else:
         try:
-            customer = Customer.objects.get(user=request.user)
+            customer = Customer.objects.get(user=user)
             debts = Debt.objects.filter(customer=customer).select_related('order')
         except Customer.DoesNotExist:
             debts = []
-        is_admin = False
 
     total_outstanding = sum(d.outstanding_balance for d in debts if not d.is_paid)
     paid_count = debts.filter(is_paid=True).count()
@@ -250,6 +323,7 @@ def debts_list_view(request):
         'total_outstanding': total_outstanding,
         'paid_count': paid_count,
         'is_admin': is_admin,
+        'is_manager': is_manager,
     })
 
 
@@ -397,33 +471,56 @@ class ProfileView(APIView):
         return Response(data)
 
 
-@staff_member_required
+@manager_required
 def admin_dashboard(request):
-    total_revenue = Payment.objects.aggregate(total=Sum('amount'))['total'] or 0
-    total_orders = Order.objects.count()
-    pending_orders = Order.objects.filter(status='pending').count()
-    outstanding_debt = Debt.objects.filter(is_paid=False).aggregate(total=Sum('outstanding_balance'))['total'] or 0
-    unpaid_debt_count = Debt.objects.filter(is_paid=False).count()
-    total_products = Product.objects.count()
-    low_stock_products = Product.objects.filter(stock__lte=5).order_by('stock')[:10]
+    user = request.user
+    is_admin = user.is_superuser or (hasattr(user, 'staff_profile') and user.staff_profile.role == 'admin')
+    
+    if is_admin:
+        total_revenue = Payment.objects.aggregate(total=Sum('amount'))['total'] or 0
+        total_orders = Order.objects.count()
+        pending_orders = Order.objects.filter(status='pending').count()
+        outstanding_debt = Debt.objects.filter(is_paid=False).aggregate(total=Sum('outstanding_balance'))['total'] or 0
+        unpaid_debt_count = Debt.objects.filter(is_paid=False).count()
+        total_products = Product.objects.count()
+        low_stock_products = Product.objects.filter(stock__lte=5).order_by('stock')[:10]
+        recent_payments = Payment.objects.select_related('order__customer__user').order_by('-payment_date')[:8]
+        top_debtors = Debt.objects.filter(is_paid=False).select_related('customer__user').order_by('-outstanding_balance')[:5]
+        order_status_breakdown = list(Order.objects.values('status').annotate(count=Count('status')))
+    else:
+        store = user.staff_profile.store
+        total_revenue = Payment.objects.filter(order__store=store).aggregate(total=Sum('amount'))['total'] or 0
+        total_orders = Order.objects.filter(store=store).count()
+        pending_orders = Order.objects.filter(store=store, status='pending').count()
+        outstanding_debt = Debt.objects.filter(is_paid=False, order__store=store).aggregate(total=Sum('outstanding_balance'))['total'] or 0
+        unpaid_debt_count = Debt.objects.filter(is_paid=False, order__store=store).count()
+        total_products = Product.objects.filter(store=store).count()
+        low_stock_products = Product.objects.filter(store=store, stock__lte=5).order_by('stock')[:10]
+        recent_payments = Payment.objects.filter(order__store=store).select_related('order__customer__user').order_by('-payment_date')[:8]
+        top_debtors = Debt.objects.filter(is_paid=False, order__store=store).select_related('customer__user').order_by('-outstanding_balance')[:5]
+        order_status_breakdown = list(Order.objects.filter(store=store).values('status').annotate(count=Count('status')))
 
     today = date.today()
     revenue_trend = []
     for i in range(5, -1, -1):
         month_date = today - relativedelta(months=i)
-        result = Payment.objects.filter(
-            payment_date__year=month_date.year,
-            payment_date__month=month_date.month
-        ).aggregate(total=Sum('amount'), count=Count('id'))
+        if is_admin:
+            result = Payment.objects.filter(
+                payment_date__year=month_date.year,
+                payment_date__month=month_date.month
+            ).aggregate(total=Sum('amount'), count=Count('id'))
+        else:
+            store = request.user.staff_profile.store
+            result = Payment.objects.filter(
+                payment_date__year=month_date.year,
+                payment_date__month=month_date.month,
+                order__store=store
+            ).aggregate(total=Sum('amount'), count=Count('id'))
         revenue_trend.append({
             'month': month_date.strftime('%b %Y'),
             'total': result['total'] or 0,
             'count': result['count'] or 0,
         })
-
-    recent_payments = Payment.objects.select_related('order__customer__user').order_by('-payment_date')[:8]
-    top_debtors = Debt.objects.filter(is_paid=False).select_related('customer__user').order_by('-outstanding_balance')[:5]
-    order_status_breakdown = list(Order.objects.values('status').annotate(count=Count('status')))
 
     status_choices = [
         ('pending', 'Pending'),
@@ -447,14 +544,20 @@ def admin_dashboard(request):
         'top_debtors': top_debtors,
         'order_status_breakdown': order_status_breakdown,
         'status_choices': status_choices,
+        'revenue_trend_json': revenue_trend_json,
+        'is_admin': is_admin,
     })
 
 
-@staff_member_required
+@manager_required
 def reports_view(request):
     from datetime import datetime
     today = date.today()
     first_of_month = today.replace(day=1)
+    
+    user = request.user
+    is_admin = user.is_superuser or (hasattr(user, 'staff_profile') and user.staff_profile.role == 'admin')
+    store = None if is_admin else user.staff_profile.store
     
     date_from_str = request.GET.get('date_from')
     date_to_str = request.GET.get('date_to')
@@ -469,7 +572,14 @@ def reports_view(request):
     except (ValueError, TypeError):
         date_to = today
 
-    payments_in_range = Payment.objects.filter(
+    payments_qs = Payment.objects.all()
+    orders_qs = Order.objects.all()
+    
+    if store:
+        payments_qs = payments_qs.filter(order__store=store)
+        orders_qs = orders_qs.filter(store=store)
+
+    payments_in_range = payments_qs.filter(
         payment_date__date__gte=date_from,
         payment_date__date__lte=date_to
     )
@@ -477,7 +587,7 @@ def reports_view(request):
     payment_count = payments_in_range.count()
     avg_payment = (total_collected / payment_count) if payment_count > 0 else 0
     
-    orders_in_range = Order.objects.filter(
+    orders_in_range = orders_qs.filter(
         order_date__date__gte=date_from,
         order_date__date__lte=date_to
     )
@@ -489,10 +599,17 @@ def reports_view(request):
     current_date = date_from.replace(day=1)
     end_date = date_to.replace(day=1)
     while current_date <= end_date:
-        count = Order.objects.filter(
-            order_date__year=current_date.year,
-            order_date__month=current_date.month
-        ).count()
+        if is_admin:
+            count = Order.objects.filter(
+                order_date__year=current_date.year,
+                order_date__month=current_date.month
+            ).count()
+        else:
+            count = Order.objects.filter(
+                order_date__year=current_date.year,
+                order_date__month=current_date.month,
+                store=store
+            ).count()
         monthly_orders.append({
             'month': current_date.strftime('%b %Y'),
             'count': count,
@@ -514,22 +631,31 @@ def reports_view(request):
         'orders_by_status': orders_by_status,
         'monthly_orders': monthly_orders,
         'monthly_orders_json': monthly_orders_json,
+        'is_admin': is_admin,
     })
 
 
-@staff_member_required
+@manager_required
 def payment_list_view(request):
-    payments = Payment.objects.all().order_by('-payment_date').select_related(
+    user = request.user
+    is_admin = user.is_superuser or (hasattr(user, 'staff_profile') and user.staff_profile.role == 'admin')
+    store = None if is_admin else user.staff_profile.store
+    
+    payments_qs = Payment.objects.all()
+    if store:
+        payments_qs = payments_qs.filter(order__store=store)
+    
+    payments = payments_qs.order_by('-payment_date').select_related(
         'order', 'order__customer', 'order__customer__user'
     )
 
-    total_collected = Payment.objects.aggregate(total=Sum('amount'))['total'] or 0
+    total_collected = payments_qs.aggregate(total=Sum('amount'))['total'] or 0
     today = date.today()
-    payments_this_month = Payment.objects.filter(
+    payments_this_month = payments_qs.filter(
         payment_date__year=today.year,
         payment_date__month=today.month,
     ).aggregate(total=Sum('amount'))['total'] or 0
-    method_counts_raw = Payment.objects.values('payment_method').annotate(count=Count('id'))
+    method_counts_raw = payments_qs.values('payment_method').annotate(count=Count('id'))
     method_counts = {item['payment_method']: item['count'] for item in method_counts_raw}
     most_used_method = max(method_counts, key=method_counts.get) if method_counts else 'N/A'
 
@@ -544,6 +670,7 @@ def payment_list_view(request):
         'most_used_method': most_used_method,
         'mpesa_count': mpesa_count,
         'cash_count': cash_count,
+        'is_admin': is_admin,
     })
 
 
@@ -555,7 +682,7 @@ def custom_login(request):
             login(request, user)
             merge_guest_cart_into_user_cart(request, user)
             messages.success(request, 'You have been logged in successfully.')
-            if user.is_staff:
+            if user.is_superuser or (hasattr(user, 'staff_profile') and user.staff_profile.is_active and user.staff_profile.role in ['manager', 'admin']):
                 return redirect(get_safe_redirect_url(request, 'admin_dashboard'))
             return redirect(get_safe_redirect_url(request, 'dashboard'))
         else:
@@ -565,10 +692,18 @@ def custom_login(request):
     return render(request, "auth/login.html", {"form": form, "next": request.GET.get('next', '')})
 
 
-@staff_member_required
+@manager_required
 @require_POST
 def update_order_status(request, pk):
-    order = get_object_or_404(Order, pk=pk)
+    user = request.user
+    is_admin = user.is_superuser or (hasattr(user, 'staff_profile') and user.staff_profile.role == 'admin')
+    
+    if is_admin:
+        order = get_object_or_404(Order, pk=pk)
+    else:
+        store = user.staff_profile.store
+        order = get_object_or_404(Order, pk=pk, store=store)
+    
     if request.method == 'POST':
         new_status = request.POST.get("status")
         order.status = new_status
@@ -588,9 +723,17 @@ def update_order_status(request, pk):
     return redirect("admin_dashboard")
 
 
-@staff_member_required
+@manager_required
 def mark_payment_paid(request, pk):
-    order = get_object_or_404(Order, pk=pk)
+    user = request.user
+    is_admin = user.is_superuser or (hasattr(user, 'staff_profile') and user.staff_profile.role == 'admin')
+    
+    if is_admin:
+        order = get_object_or_404(Order, pk=pk)
+    else:
+        store = user.staff_profile.store
+        order = get_object_or_404(Order, pk=pk, store=store)
+    
     if request.method == 'POST':
         # Create a payment record marking the order as fully paid
         amount = order.get_outstanding_balance()
@@ -612,10 +755,19 @@ def mark_payment_paid(request, pk):
     return redirect("admin_dashboard")
 
 
-@staff_member_required  
+@manager_required
 def update_payment(request, pk):
-    payment = get_object_or_404(Payment, id=pk)
-    orders = Order.objects.all().order_by('-order_date')
+    user = request.user
+    is_admin = user.is_superuser or (hasattr(user, 'staff_profile') and user.staff_profile.role == 'admin')
+    store = None if is_admin else user.staff_profile.store
+    
+    if is_admin:
+        payment = get_object_or_404(Payment, id=pk)
+        orders = Order.objects.all().order_by('-order_date')
+    else:
+        payment = get_object_or_404(Payment, id=pk, order__store=store)
+        orders = Order.objects.filter(store=store).order_by('-order_date')
+    
     unpaid_orders = [o for o in orders if o.get_outstanding_balance() > 0]
 
     if request.method == 'POST':
@@ -642,12 +794,20 @@ def update_payment(request, pk):
         'order': payment.order,
         'orders': unpaid_orders,
         'payment': payment,
+        'is_admin': is_admin,
     })
 
 
-@staff_member_required
+@admin_required
 def delete_payment(request, pk):
-    payment = get_object_or_404(Payment, pk=pk)
+    user = request.user
+    is_admin = user.is_superuser or (hasattr(user, 'staff_profile') and user.staff_profile.role == 'admin')
+    store = None if is_admin else user.staff_profile.store
+    
+    if is_admin:
+        payment = get_object_or_404(Payment, pk=pk)
+    else:
+        payment = get_object_or_404(Payment, pk=pk, order__store=store)
     
     if request.method == "POST":
         payment_id = payment.id
@@ -661,9 +821,17 @@ def delete_payment(request, pk):
     })
 
 
-@staff_member_required
+@manager_required
 def add_payment_standalone(request):
-    orders = Order.objects.all().order_by('-order_date')
+    user = request.user
+    is_admin = user.is_superuser or (hasattr(user, 'staff_profile') and user.staff_profile.role == 'admin')
+    store = None if is_admin else user.staff_profile.store
+    
+    if is_admin:
+        orders = Order.objects.all().order_by('-order_date')
+    else:
+        orders = Order.objects.filter(store=store).order_by('-order_date')
+    
     unpaid_orders = [o for o in orders if o.get_outstanding_balance() > 0]
 
     if request.method == 'POST':
@@ -672,39 +840,51 @@ def add_payment_standalone(request):
         payment_method = request.POST.get('payment_method')
         payment_date = request.POST.get('payment_date')
 
-        if order_id and amount and payment_method:
+        if is_admin:
             order = get_object_or_404(Order, id=order_id)
-            Payment.objects.create(
-                order=order,
-                amount=Decimal(amount),
-                payment_method=payment_method,
-                payment_date=payment_date or timezone.now(),
-                status='completed'
-            )
-            try:
-                debt = Debt.objects.get(order=order)
-                debt.calculate_outstanding_balance()
-            except Debt.DoesNotExist:
-                pass
-            messages.success(
-                request,
-                f"Payment of KSh {amount} recorded successfully."
-            )
-            return redirect('payment_list')
         else:
-            messages.error(request, "Please fill all required fields.")
+            order = get_object_or_404(Order, id=order_id, store=store)
+            
+        Payment.objects.create(
+            order=order,
+            amount=Decimal(amount),
+            payment_method=payment_method,
+            payment_date=payment_date or timezone.now(),
+            status='completed'
+        )
+        try:
+            debt = Debt.objects.get(order=order)
+            debt.calculate_outstanding_balance()
+        except Debt.DoesNotExist:
+            pass
+        messages.success(
+            request,
+            f"Payment of KSh {amount} recorded successfully."
+        )
+        return redirect('payment_list')
+    else:
+        messages.error(request, "Please fill all required fields.")
 
     return render(request, 'ecommerce/payment_form.html', {
         'order': None,
         'orders': unpaid_orders,
         'payment': None,
+        'is_admin': is_admin,
     })
 
 
-@staff_member_required
+@manager_required
 def add_payment(request, order_id=None):
-    order = get_object_or_404(Order, id=order_id)
-    orders = Order.objects.all().order_by('-order_date')
+    user = request.user
+    is_admin = user.is_superuser or (hasattr(user, 'staff_profile') and user.staff_profile.role == 'admin')
+    store = None if is_admin else user.staff_profile.store
+    
+    if is_admin:
+        order = get_object_or_404(Order, id=order_id)
+        orders = Order.objects.all().order_by('-order_date')
+    else:
+        order = get_object_or_404(Order, id=order_id, store=store)
+        orders = Order.objects.filter(store=store).order_by('-order_date')
     # Only show orders with outstanding balance
     unpaid_orders = [o for o in orders if o.get_outstanding_balance() > 0]
 
@@ -734,15 +914,23 @@ def add_payment(request, order_id=None):
         'order': order,
         'orders': unpaid_orders,
         'payment': None,
+        'is_admin': is_admin,
     })
 
 
-@staff_member_required
+@manager_required
 def add_product(request):
+    user = request.user
+    is_admin = user.is_superuser or (hasattr(user, 'staff_profile') and user.staff_profile.role == 'admin')
+    store = None if is_admin else user.staff_profile.store
+    
     if request.method == "POST":
         form = ProductForm(request.POST)
         if form.is_valid():
-            product = form.save()
+            product = form.save(commit=False)
+            if not is_admin:
+                product.store = store
+            product.save()
             for image in request.FILES.getlist('images'):
                 ProductImage.objects.create(product=product, image=image)
             messages.success(request, f"Product '{product.name}' added successfully.")
@@ -750,11 +938,20 @@ def add_product(request):
     else:
         form = ProductForm()
 
-    return render(request, "ecommerce/product_form.html", {"form": form})
+    return render(request, "ecommerce/product_form.html", {"form": form, "is_admin": is_admin})
 
 
+@manager_required
 def update_product(request, pk):
-    product = get_object_or_404(Product, pk=pk)
+    user = request.user
+    is_admin = user.is_superuser or (hasattr(user, 'staff_profile') and user.staff_profile.role == 'admin')
+    store = None if is_admin else user.staff_profile.store
+    
+    if is_admin:
+        product = get_object_or_404(Product, pk=pk)
+    else:
+        product = get_object_or_404(Product, pk=pk, store=store)
+    
     if request.method == "POST":
         form = ProductForm(request.POST, instance=product)
         if form.is_valid():
@@ -769,12 +966,20 @@ def update_product(request, pk):
     else:
         form = ProductForm(instance=product)
 
-    return render(request, "ecommerce/product_form.html", {"form": form, "product": product})
+    return render(request, "ecommerce/product_form.html", {"form": form, "product": product, "is_admin": is_admin})
 
 
-@staff_member_required
+@manager_required
 def delete_product(request, pk):
-    product = get_object_or_404(Product, pk=pk)
+    user = request.user
+    is_admin = user.is_superuser or (hasattr(user, 'staff_profile') and user.staff_profile.role == 'admin')
+    store = None if is_admin else user.staff_profile.store
+    
+    if is_admin:
+        product = get_object_or_404(Product, pk=pk)
+    else:
+        product = get_object_or_404(Product, pk=pk, store=store)
+    
     if request.method == "POST":
         product.delete()
         messages.success(request, f"Product '{product.name}' deleted successfully.")
@@ -786,10 +991,18 @@ def delete_product(request, pk):
     })
 
 
-@staff_member_required
+@manager_required
 @require_POST
 def adjust_stock(request, pk):
-    product = get_object_or_404(Product, pk=pk)
+    user = request.user
+    is_admin = user.is_superuser or (hasattr(user, 'staff_profile') and user.staff_profile.role == 'admin')
+    store = None if is_admin else user.staff_profile.store
+    
+    if is_admin:
+        product = get_object_or_404(Product, pk=pk)
+    else:
+        product = get_object_or_404(Product, pk=pk, store=store)
+    
     adjustment_type = request.POST.get('adjustment_type')
     quantity = int(request.POST.get('quantity', 0))
     reason = request.POST.get('reason', '')
@@ -816,9 +1029,16 @@ def adjust_stock(request, pk):
     return redirect('admin_products_list')
 
 
-@staff_member_required
+@manager_required
 def admin_update_order(request, pk):
-    order = get_object_or_404(Order, pk=pk)
+    user = request.user
+    is_admin = user.is_superuser or (hasattr(user, 'staff_profile') and user.staff_profile.role == 'admin')
+    store = None if is_admin else user.staff_profile.store
+    
+    if is_admin:
+        order = get_object_or_404(Order, pk=pk)
+    else:
+        order = get_object_or_404(Order, pk=pk, store=store)
     
     if request.method == "POST":
         status = request.POST.get("status")
@@ -837,13 +1057,21 @@ def admin_update_order(request, pk):
     status_choices = Order._meta.get_field('status').choices
     return render(request, 'ecommerce/admin_order_edit.html', {
         'order': order,
-        'status_choices': status_choices
+        'status_choices': status_choices,
+        'is_admin': is_admin,
     })
 
 
-@staff_member_required
+@manager_required
 def admin_delete_order(request, pk):
-    order = get_object_or_404(Order, pk=pk)
+    user = request.user
+    is_admin = user.is_superuser or (hasattr(user, 'staff_profile') and user.staff_profile.role == 'admin')
+    store = None if is_admin else user.staff_profile.store
+    
+    if is_admin:
+        order = get_object_or_404(Order, pk=pk)
+    else:
+        order = get_object_or_404(Order, pk=pk, store=store)
     
     if request.method == "POST":
         order.delete()
@@ -916,9 +1144,17 @@ def product_detail(request, pk):
     return render(request, 'ecommerce/product_detail.html', {'product': product})
 
 
-@staff_member_required
+@manager_required
 def admin_products_list(request):
-    products = Product.objects.all().prefetch_related('images')
+    user = request.user
+    is_admin = user.is_superuser or (hasattr(user, 'staff_profile') and user.staff_profile.role == 'admin')
+    store = None if is_admin else user.staff_profile.store
+    
+    if is_admin:
+        products = Product.objects.all().prefetch_related('images')
+    else:
+        products = Product.objects.filter(store=store).prefetch_related('images')
+    
     in_stock_count = products.filter(stock__gt=0).count()
     out_of_stock_count = products.filter(stock=0).count()
     total_value = sum(p.price * p.stock for p in products)
@@ -928,34 +1164,51 @@ def admin_products_list(request):
         'in_stock_count': in_stock_count,
         'out_of_stock_count': out_of_stock_count,
         'total_value': total_value,
+        'is_admin': is_admin,
     })
 
 
 # -------------------
 # Consignment Views
 # -------------------
-@staff_member_required
+@manager_required
 def consignment_list(request):
-    consignments = Consignment.objects.all().prefetch_related('items__product')
-    suppliers = Supplier.objects.all()
-    return render(request, 'ecommerce/consignments.html', {'consignments': consignments, 'suppliers': suppliers})
+    user = request.user
+    is_admin = user.is_superuser or (hasattr(user, 'staff_profile') and user.staff_profile.role == 'admin')
+    store = None if is_admin else user.staff_profile.store
+    
+    if is_admin:
+        consignments = Consignment.objects.all().prefetch_related('items__product')
+        suppliers = Supplier.objects.all()
+    else:
+        consignments = Consignment.objects.filter(store=store).prefetch_related('items__product')
+        suppliers = Supplier.objects.all()  # Suppliers are global
+    
+    return render(request, 'ecommerce/consignments.html', {'consignments': consignments, 'suppliers': suppliers, 'is_admin': is_admin})
 
 
-@staff_member_required
+@manager_required
 def add_consignment(request):
+    user = request.user
+    is_admin = user.is_superuser or (hasattr(user, 'staff_profile') and user.staff_profile.role == 'admin')
+    store = None if is_admin else user.staff_profile.store
+    
     if request.method == 'POST':
         form = ConsignmentForm(request.POST)
         if form.is_valid():
-            consignment = form.save()
+            consignment = form.save(commit=False)
+            if not is_admin:
+                consignment.store = store
+            consignment.save()
             messages.success(request, f"Consignment {consignment.reference_number} created.")
             return redirect('consignment_list')
     else:
         form = ConsignmentForm()
     
-    return render(request, 'ecommerce/consignment_form.html', {'form': form})
+    return render(request, 'ecommerce/consignment_form.html', {'form': form, 'is_admin': is_admin})
 
 
-@staff_member_required
+@manager_required
 def add_supplier(request):
     if request.method == 'POST':
         form = SupplierForm(request.POST)
@@ -969,39 +1222,57 @@ def add_supplier(request):
     return render(request, 'ecommerce/supplier_form.html', {'form': form})
 
 
-@staff_member_required
+@manager_required
 def add_expense(request):
+    user = request.user
+    is_admin = user.is_superuser or (hasattr(user, 'staff_profile') and user.staff_profile.role == 'admin')
+    store = None if is_admin else user.staff_profile.store
+    
     if request.method == 'POST':
         form = ExpenseForm(request.POST)
         if form.is_valid():
             expense = form.save(commit=False)
             expense.recorded_by = request.user
+            if not is_admin:
+                expense.store = store
             expense.save()
             messages.success(request, f"Expense recorded: {expense.get_category_display()}")
             return redirect('expense_list')
     else:
         form = ExpenseForm()
     
-    return render(request, 'ecommerce/expense_form.html', {'form': form})
+    return render(request, 'ecommerce/expense_form.html', {'form': form, 'is_admin': is_admin})
 
 
-@staff_member_required
+@manager_required
 def expense_list(request):
-    expenses = Expense.objects.all()
-    return render(request, 'ecommerce/expenses.html', {'expenses': expenses})
+    user = request.user
+    is_admin = user.is_superuser or (hasattr(user, 'staff_profile') and user.staff_profile.role == 'admin')
+    store = None if is_admin else user.staff_profile.store
+    
+    if is_admin:
+        expenses = Expense.objects.all()
+    else:
+        expenses = Expense.objects.filter(store=store)
+    
+    return render(request, 'ecommerce/expenses.html', {'expenses': expenses, 'is_admin': is_admin})
 
 
 # -------------------
 # Financial Reports
 # -------------------
-@staff_member_required
+@manager_required
 def financial_report(request):
     from datetime import datetime, timedelta
+    
+    user = request.user
+    is_admin = user.is_superuser or (hasattr(user, 'staff_profile') and user.staff_profile.role == 'admin')
+    store = None if is_admin else user.staff_profile.store
     
     # Get date range from request or default to today
     start_date = request.GET.get('start_date')
     end_date = request.GET.get('end_date')
-  
+   
     today = date.today()
     if start_date and end_date:
         start = datetime.strptime(start_date, '%Y-%m-%d').date()
@@ -1010,26 +1281,36 @@ def financial_report(request):
         start = today
         end = today
     
+    # Filter by store for managers
+    consignments_qs = Consignment.objects.all()
+    orders_qs = Order.objects.all()
+    expenses_qs = Expense.objects.all()
+    products_qs = Product.objects.all()
+    
+    if store:
+        consignments_qs = consignments_qs.filter(store=store)
+        orders_qs = orders_qs.filter(store=store)
+        expenses_qs = expenses_qs.filter(store=store)
+        products_qs = products_qs.filter(store=store)
+    
     # Calculate metrics
-    # Opening stock: stock before start_date (need historical tracking)
-    # For now, use current stock minus recent receipts
-    consignments = Consignment.objects.filter(date_received__range=[start, end])
+    consignments = consignments_qs.filter(date_received__range=[start, end])
     stock_received = sum(c.get_total_quantity() for c in consignments)
     
     # Purchases = cost from consignments in period
     total_purchases = sum(c.get_total_cost() for c in consignments)
     
     # Sales in period
-    orders = Order.objects.filter(order_date__date__range=[start, end])
+    orders = orders_qs.filter(order_date__date__range=[start, end])
     total_sales = sum(o.get_total_amount() for o in orders)
     stock_sold = sum(sum(i.quantity for i in o.items.all()) for o in orders)
     
     # Expenses in period
-    expenses = Expense.objects.filter(date__range=[start, end])
+    expenses = expenses_qs.filter(date__range=[start, end])
     total_expenses = sum(e.amount for e in expenses)
     
     # Current stock value (simplified - actual COGS needed)
-    current_stock_value = sum(p.price * p.stock for p in Product.objects.all())
+    current_stock_value = sum(p.price * p.stock for p in products_qs)
     
     # COGS (using average cost or from consignments - simplified)
     cogs = stock_sold * 0  # Will need unit cost tracking
@@ -1037,9 +1318,9 @@ def financial_report(request):
     # Calculate average product cost from consignments
     total_units_received = sum(
         sum(item.quantity for item in c.items.all())
-        for c in Consignment.objects.all()
+        for c in consignments_qs
     )
-    total_cost_all = sum(c.get_total_cost() for c in Consignment.objects.all())
+    total_cost_all = sum(c.get_total_cost() for c in consignments_qs)
     avg_unit_cost = (total_cost_all / total_units_received) if total_units_received > 0 else 0
     cogs = stock_sold * avg_unit_cost
     
@@ -1047,7 +1328,7 @@ def financial_report(request):
     net_profit = gross_profit - total_expenses
     
     # Low stock alerts
-    low_stock_products = Product.objects.filter(stock__lte=5, stock__gt=0)
+    low_stock_products = products_qs.filter(stock__lte=5, stock__gt=0)
     
     context = {
         'start_date': start,
@@ -1061,6 +1342,107 @@ def financial_report(request):
         'total_expenses': total_expenses,
         'net_profit': net_profit,
         'low_stock_products': low_stock_products,
+        'is_admin': is_admin,
     }
     
     return render(request, 'ecommerce/financial_report.html', context)
+
+
+# -------------------
+# Staff Management Views (Admin Only)
+# -------------------
+@admin_required
+def staff_list(request):
+    """List all staff (managers + admins)."""
+    staff = StaffProfile.objects.select_related('user', 'store').all()
+    return render(request, 'ecommerce/staff_list.html', {'staff': staff, 'is_admin': True})
+
+
+@admin_required
+def staff_create(request):
+    """Create new manager or admin."""
+    if request.method == 'POST':
+        username = request.POST.get('username')
+        email = request.POST.get('email')
+        first_name = request.POST.get('first_name')
+        last_name = request.POST.get('last_name')
+        password = request.POST.get('password')
+        role = request.POST.get('role')
+        store_id = request.POST.get('store')
+        
+        if username and email and password and role:
+            user = User.objects.create_user(
+                username=username,
+                email=email,
+                first_name=first_name,
+                last_name=last_name,
+                password=password
+            )
+            store = None
+            if role == 'manager':
+                if store_id:
+                    store = get_object_or_404(Store, pk=store_id)
+                else:
+                    messages.error(request, 'Store is required for managers.')
+                    user.delete()
+                    return redirect('staff_create')
+            StaffProfile.objects.create(user=user, role=role, store=store)
+            messages.success(request, f"Staff {username} created successfully.")
+            return redirect('staff_list')
+        else:
+            messages.error(request, "Please fill all required fields.")
+    
+    stores = Store.objects.filter(is_active=True)
+    return render(request, 'ecommerce/staff_form.html', {'stores': stores, 'is_admin': True})
+
+
+@admin_required
+def staff_edit(request, pk):
+    """Edit staff role, store, active status."""
+    staff = get_object_or_404(StaffProfile, pk=pk)
+    
+    if request.method == 'POST':
+        role = request.POST.get('role')
+        store_id = request.POST.get('store')
+        is_active = request.POST.get('is_active') == 'on'
+        
+        staff.role = role
+        staff.is_active = is_active
+        
+        if role == 'manager':
+            if store_id:
+                staff.store = get_object_or_404(Store, pk=store_id)
+            else:
+                messages.error(request, 'Store is required for managers.')
+                return redirect('staff_edit', pk=pk)
+        else:
+            staff.store = None
+        
+        staff.save()
+        messages.success(request, f"Staff {staff.user.username} updated successfully.")
+        return redirect('staff_list')
+    
+    stores = Store.objects.filter(is_active=True)
+    return render(request, 'ecommerce/staff_form.html', {'staff': staff, 'stores': stores, 'is_admin': True})
+
+
+@admin_required
+def staff_delete(request, pk):
+    """Delete staff (not admin)."""
+    staff = get_object_or_404(StaffProfile, pk=pk)
+    
+    if staff.role == 'admin':
+        messages.error(request, 'Cannot delete admin users.')
+        return redirect('staff_list')
+    
+    if request.method == "POST":
+        username = staff.user.username
+        staff.user.delete()
+        messages.success(request, f"Staff {username} deleted successfully.")
+        return redirect("staff_list")
+    
+    return render(request, "ecommerce/confirm_delete.html", {
+        "object": staff,
+        "object_name": f"Staff: {staff.user.username}",
+        "cancel_url": '/admin-dashboard/staff/'
+    })
