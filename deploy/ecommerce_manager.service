@@ -1,0 +1,34 @@
+[Unit]
+Description=Gunicorn daemon for ecommerce_manager
+After=network.target
+
+[Service]
+User=www-data
+Group=www-data
+WorkingDirectory=/home/samido/Desktop/BusinessWebsite
+EnvironmentFile=/home/samido/Desktop/BusinessWebsite/.env
+ExecStart=/home/samido/Desktop/BusinessWebsite/venv/bin/gunicorn \
+    --access-logfile - \
+    --error-logfile - \
+    --workers 3 \
+    --bind 127.0.0.1:8000 \
+    --timeout 60 \
+    --graceful-timeout 30 \
+    --max-requests 1000 \
+    --max-requests-jitter 100 \
+    ecommerce_manager.wsgi:application
+ExecReload=/bin/kill -s HUP $MAINPID
+Restart=on-failure
+RestartSec=5
+
+# Security hardening
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/home/samido/Desktop/BusinessWebsite/media /home/samido/Desktop/BusinessWebsite/staticfiles
+NoNewPrivileges=true
+CapabilityBoundingSet=
+SystemCallFilter=@system-service
+
+[Install]
+WantedBy=multi-user.target
