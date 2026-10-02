@@ -14,11 +14,12 @@ from pathlib import Path
 import os
 from dotenv import load_dotenv
 
+# Load environment variables from .env file first: the Cloudinary SDK reads
+# CLOUDINARY_URL at import time, so .env must be loaded before `import cloudinary`
+load_dotenv()
+
 import dj_database_url
 import cloudinary
-
-# Load environment variables from .env file
-load_dotenv()
 
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent
@@ -86,8 +87,8 @@ MIDDLEWARE = [
 CSP_DEFAULT_SRC = ["'self'"]
 CSP_SCRIPT_SRC = ["'self'"]
 CSP_STYLE_SRC = ["'self'"]
-CSP_IMG_SRC = ["'self'", 'data:']
-CSP_CONNECT_SRC = ["'self'"]
+CSP_IMG_SRC = ["'self'", 'data:', 'https://res.cloudinary.com']
+CSP_CONNECT_SRC = ["'self'", 'https://api.cloudinary.com']
 CSP_FONT_SRC = ["'self'"]
 CSP_FRAME_ANCESTORS = ["'none'"]
 CSP_BASE_URI = ["'self'"]

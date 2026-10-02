@@ -348,7 +348,8 @@ MIDDLEWARE = [
 CSP_DEFAULT_SRC = ["'self'"]
 CSP_SCRIPTS_SRC = ["'self'"]
 CSP_STYLE_SRC = ["'self'"]
-CSP_IMG_SRC = ["'self'", "data:"]
+CSP_IMG_SRC = ["'self'", "data:", "https://res.cloudinary.com"]
+CSP_CONNECT_SRC = ["'self'", "https://api.cloudinary.com"]
 # ... etc
 ```
 

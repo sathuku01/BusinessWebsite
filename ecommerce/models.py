@@ -3,6 +3,7 @@ from django.conf import settings
 from django.core.exceptions import ValidationError
 from django.utils.text import slugify
 from django.contrib.auth.models import AbstractUser
+from cloudinary.models import CloudinaryField
 
 
 class User(AbstractUser):
@@ -174,7 +175,7 @@ class CartItem(models.Model):
 
 class ProductImage(models.Model):
     product = models.ForeignKey(Product, related_name="images", on_delete=models.CASCADE)
-    image = models.ImageField(upload_to="products/", blank=True, null=True)
+    image = CloudinaryField("image")
 
     def __str__(self):
         return f"Image for {self.product.name}"
