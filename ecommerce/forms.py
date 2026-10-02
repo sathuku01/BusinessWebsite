@@ -62,8 +62,9 @@ class CustomAuthenticationForm(AuthenticationForm):
 
 class ProductChoiceField(forms.ModelChoiceField):
     def label_from_instance(self, obj):
-        if obj.image:
-            return f'<img src="{obj.image.url}" style="height:40px;width:auto;"> {obj.name}'
+        image = obj.images.first()
+        if image and image.image:
+            return f'<img src="{image.image.url}" style="height:40px;width:auto;"> {obj.name}'
         return obj.name
 
 

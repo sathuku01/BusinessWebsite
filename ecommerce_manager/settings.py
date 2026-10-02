@@ -14,12 +14,21 @@ from pathlib import Path
 import os
 from dotenv import load_dotenv
 
-# Load environment variables from .env file first: the Cloudinary SDK reads
-# CLOUDINARY_URL at import time, so .env must be loaded before `import cloudinary`
+# Load environment variables first: the Cloudinary SDK reads CLOUDINARY_URL once,
+# at `import cloudinary`, so .env / vercel-pulled .env.local must load before it.
 load_dotenv()
+load_dotenv(".env.local")  # output of `vercel env pull`; never overrides existing vars
 
 import dj_database_url
 import cloudinary
+
+if not cloudinary.config().api_key:
+    _cld_vars = sorted(name for name in os.environ if name.startswith("CLOUDINARY"))
+    raise ValueError(
+        "Cloudinary credentials not loaded. Set CLOUDINARY_URL="
+        "'cloudinary://API_KEY:API_SECRET@CLOUD_NAME' in the deployment environment. "
+        f"CLOUDINARY_* variables present: {_cld_vars or 'none'}"
+    )
 
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent
@@ -83,16 +92,21 @@ MIDDLEWARE = [
     'django.middleware.clickjacking.XFrameOptionsMiddleware',
 ]
 
-# CSP settings - restrictive by default, override via env if needed
-CSP_DEFAULT_SRC = ["'self'"]
-CSP_SCRIPT_SRC = ["'self'"]
-CSP_STYLE_SRC = ["'self'"]
-CSP_IMG_SRC = ["'self'", 'data:', 'https://res.cloudinary.com']
-CSP_CONNECT_SRC = ["'self'", 'https://api.cloudinary.com']
-CSP_FONT_SRC = ["'self'"]
-CSP_FRAME_ANCESTORS = ["'none'"]
-CSP_BASE_URI = ["'self'"]
-CSP_FORM_ACTION = ["'self'"]
+# CSP (django-csp >= 4.0 format - the legacy CSP_* settings are no longer read
+# by the middleware). Directories the site loads from are audited in ARCHITECTURE.md.
+CONTENT_SECURITY_POLICY = {
+    "DIRECTIVES": {
+        "default-src": ["'self'"],
+        "script-src": ["'self'", "'unsafe-inline'", "https://cdn.jsdelivr.net"],
+        "style-src": ["'self'", "'unsafe-inline'", "https://fonts.googleapis.com", "https://cdn.jsdelivr.net"],
+        "img-src": ["'self'", "data:", "https://res.cloudinary.com"],
+        "font-src": ["'self'", "https://fonts.gstatic.com", "https://cdn.jsdelivr.net"],
+        "connect-src": ["'self'", "https://api.cloudinary.com"],
+        "frame-ancestors": ["'none'"],
+        "base-uri": ["'self'"],
+        "form-action": ["'self'"],
+    }
+}
 
 ROOT_URLCONF = 'ecommerce_manager.urls'
 

@@ -206,7 +206,7 @@ merge_guest_cart_into_user_cart(request, user):
 | `post_save` | `Payment` | Update debt balance |
 | `post_save` | `User` | Auto-create `Customer` |
 | `user_logged_in` | - | Merge guest cart |
-| `post_delete` | `ProductImage` | Delete image file |
+| `post_delete` | `ProductImage` | Delete Cloudinary asset (remote destroy) |
 
 ### Debt Auto-Creation Flow
 ```
@@ -345,12 +345,19 @@ MIDDLEWARE = [
     'csp.middleware.CSPMiddleware',  # After SecurityMiddleware
 ]
 
-CSP_DEFAULT_SRC = ["'self'"]
-CSP_SCRIPTS_SRC = ["'self'"]
-CSP_STYLE_SRC = ["'self'"]
-CSP_IMG_SRC = ["'self'", "data:", "https://res.cloudinary.com"]
-CSP_CONNECT_SRC = ["'self'", "https://api.cloudinary.com"]
-# ... etc
+CONTENT_SECURITY_POLICY = {
+    "DIRECTIVES": {
+        "default-src": ["'self'"],
+        "script-src": ["'self'", "'unsafe-inline'", "https://cdn.jsdelivr.net"],
+        "style-src": ["'self'", "'unsafe-inline'", "https://fonts.googleapis.com", "https://cdn.jsdelivr.net"],
+        "img-src": ["'self'", "data:", "https://res.cloudinary.com"],
+        "font-src": ["'self'", "https://fonts.gstatic.com", "https://cdn.jsdelivr.net"],
+        "connect-src": ["'self'", "https://api.cloudinary.com"],
+        "frame-ancestors": ["'none'"],
+        "base-uri": ["'self'"],
+        "form-action": ["'self'"],
+    }
+}
 ```
 
 ### Session Security

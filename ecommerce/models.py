@@ -1,9 +1,31 @@
+import logging
+
 from django.db import models
 from django.conf import settings
 from django.core.exceptions import ValidationError
 from django.utils.text import slugify
 from django.contrib.auth.models import AbstractUser
 from cloudinary.models import CloudinaryField
+
+logger = logging.getLogger(__name__)
+
+
+def destroy_cloudinary_asset(value):
+    """Best-effort deletion of the Cloudinary asset behind a CloudinaryField value."""
+    if not value:
+        return
+    public_id = getattr(value, "public_id", None)
+    if not public_id:
+        return
+    try:
+        from cloudinary.uploader import destroy
+        destroy(
+            public_id,
+            type=getattr(value, "type", None) or "upload",
+            resource_type=getattr(value, "resource_type", None) or "image",
+        )
+    except Exception:
+        logger.warning("Could not delete Cloudinary asset %r", public_id, exc_info=True)
 
 
 class User(AbstractUser):
@@ -106,7 +128,9 @@ class Customer(models.Model):
     user = models.OneToOneField(settings.AUTH_USER_MODEL, on_delete=models.CASCADE)
     phone_number = models.CharField(max_length=20, blank=True)
     address = models.TextField(blank=True)
-    profile_picture = models.ImageField(upload_to='profile_pics/', null=True, blank=True)
+    profile_picture = CloudinaryField(
+        "profile picture", folder="profile_pics", null=True, blank=True
+    )
 
     def __str__(self):
         return self.user.username
@@ -175,14 +199,13 @@ class CartItem(models.Model):
 
 class ProductImage(models.Model):
     product = models.ForeignKey(Product, related_name="images", on_delete=models.CASCADE)
-    image = CloudinaryField("image")
+    image = CloudinaryField("image", null=True, blank=True)
 
     def __str__(self):
         return f"Image for {self.product.name}"
 
-    def delete(self, *args, **kwargs):
-        self.image.delete(save=False)
-        super().delete(*args, **kwargs)
+    # Remote asset cleanup is handled by the post_delete signal in signals.py,
+    # which fires for both instance.delete() and queryset deletes.
 
 
 class Order(models.Model):

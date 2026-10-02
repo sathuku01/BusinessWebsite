@@ -7,7 +7,7 @@ from django.dispatch import receiver
 from .models import OrderItem, Payment, Debt, Order
 from django.contrib.auth import get_user_model
 from .models import Customer
-from .models import ProductImage
+from .models import ProductImage, destroy_cloudinary_asset
 from .cart import merge_guest_cart_into_user_cart
 
 
@@ -71,5 +71,4 @@ def merge_guest_cart_on_login(sender, request, user, **kwargs):
 
 @receiver(post_delete, sender=ProductImage)
 def delete_product_image_file(sender, instance, **kwargs):
-    if instance.image:
-        instance.image.delete(save=False)
+    destroy_cloudinary_asset(instance.image)

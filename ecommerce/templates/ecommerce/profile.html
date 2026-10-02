@@ -7,7 +7,7 @@
   <div class="card-body p-4">
     <div class="row align-items-center">
       <div class="col-auto">
-        {% if user.customer.profile_picture %}
+        {% if user.customer.profile_picture.public_id %}
           <img src="{{ user.customer.profile_picture.url }}" class="rounded-circle" style="width:100px;height:100px;object-fit:cover;">
         {% else %}
           <i class="bi bi-person-circle" style="font-size: 5rem; color: #6c757d;"></i>
