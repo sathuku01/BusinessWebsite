@@ -10,3 +10,4 @@ django-csp
 gunicorn==23.0.0
 psycopg[binary]==3.2.9
 dj_database_url==3.1.2
+cloudinary
