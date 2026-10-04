@@ -111,6 +111,7 @@ CONTENT_SECURITY_POLICY = {
         "frame-ancestors": ["'none'"],
         "base-uri": ["'self'"],
         "form-action": ["'self'"],
+        "report-uri": ["/api/csp-report/"],
     }
 }
 
@@ -215,6 +216,11 @@ LOGGING = {
             'propagate': False,
         },
         'django.security': {
+            'handlers': ['console'],
+            'level': 'WARNING',
+            'propagate': False,
+        },
+        'csp.violations': {
             'handlers': ['console'],
             'level': 'WARNING',
             'propagate': False,

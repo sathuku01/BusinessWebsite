@@ -1,4 +1,5 @@
 import json
+import logging
 from functools import wraps
 from django.db.models import Sum, Count, Q
 from datetime import date
@@ -40,6 +41,7 @@ from django.contrib.auth.decorators import login_required
 from django.http import HttpResponseRedirect, Http404, HttpResponse
 from django.urls import reverse
 from django.views.decorators.http import require_POST
+from django.views.decorators.csrf import csrf_exempt
 from django.contrib import messages
 from django.core.exceptions import ValidationError
 
@@ -154,6 +156,33 @@ class DebtViewSet(viewsets.ModelViewSet):
         if hasattr(user, 'staff_profile') and user.staff_profile.role == 'manager':
             return qs.filter(order__store=user.staff_profile.store)
         return qs
+
+csp_logger = logging.getLogger("csp.violations")
+
+CSP_REPORT_MAX_BYTES = 8192
+
+
+# Browsers POST violation reports cross-origin with no CSRF token, so this endpoint
+# cannot be protected; it only logs and never reflects the report back.
+@csrf_exempt
+@require_POST
+def csp_report_view(request):
+    if int(request.META.get("CONTENT_LENGTH") or 0) > CSP_REPORT_MAX_BYTES:
+        return HttpResponse(status=413)
+    try:
+        report = json.loads(request.body or b"{}")
+    except ValueError:
+        return HttpResponse(status=400)
+    body = report.get("csp-report", report)
+    csp_logger.warning(
+        "CSP: %s blocked %s (document: %s, source: %s)",
+        body.get("blocked-uri", "?"),
+        body.get("violated-directive", "?"),
+        body.get("document-uri", "?"),
+        body.get("source-file", "?"),
+    )
+    return HttpResponse(status=204)
+
 
 def register_view(request):
     if request.method == 'POST':
