@@ -107,6 +107,7 @@ CONTENT_SECURITY_POLICY = {
         "img-src": ["'self'", "data:", "https://res.cloudinary.com"],
         "font-src": ["'self'", "https://fonts.gstatic.com", "https://cdn.jsdelivr.net"],
         "connect-src": ["'self'", "https://api.cloudinary.com"],
+        "object-src": ["'none'"],
         "frame-ancestors": ["'none'"],
         "base-uri": ["'self'"],
         "form-action": ["'self'"],
