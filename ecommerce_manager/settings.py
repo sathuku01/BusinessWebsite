@@ -30,6 +30,11 @@ if not cloudinary.config().api_key:
         f"CLOUDINARY_* variables present: {_cld_vars or 'none'}"
     )
 
+# Without this, cloudinary.utils builds `http://res.cloudinary.com/...` URLs, which both
+# the CSP (img-src allows https only) and the browser's mixed-content rules reject.
+# Neither CLOUDINARY_SECURE nor CLOUDINARY_SETTINGS is honoured by the SDK.
+cloudinary.config(secure=True)
+
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent
 
