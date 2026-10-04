@@ -1,4 +1,9 @@
+import json
+import re
+
 from django.test import TestCase, Client
+from django.test.client import RequestFactory
+from django.middleware.csrf import rotate_token
 from django.urls import reverse
 from django.contrib.auth import get_user_model
 from .models import Product, Cart, CartItem, Store, StaffProfile, Order, Customer, OrderItem
@@ -220,3 +225,105 @@ class ThreeTierRoleTests(TestCase):
         self.client.login(username='customer', password='customer123')
         response = self.client.get(reverse('order_detail', args=[other_order.pk]))
         self.assertEqual(response.status_code, 404)  # Not found (filtered out)
+
+class CsrfProtectionTests(TestCase):
+    """The register/login forms are plain server-rendered POSTs, so these guard the
+    cookie/token pairing that produces 'CSRF token from POST incorrect'."""
+
+    def setUp(self):
+        self.client = Client(enforce_csrf_checks=True)
+        self.form_data = {
+            'username': 'newcomer',
+            'first_name': 'New',
+            'last_name': 'Comer',
+            'email': 'newcomer@example.com',
+            'password1': 'Str0ng-Pass!234',
+            'password2': 'Str0ng-Pass!234',
+        }
+
+    def _token(self, url_name, **kwargs):
+        response = self.client.get(reverse(url_name, **kwargs))
+        match = re.search(r'csrfmiddlewaretoken" value="([^"]+)"', response.content.decode())
+        self.assertIsNotNone(match, 'form did not render a CSRF token')
+        return match.group(1)
+
+    def test_register_succeeds_with_matching_cookie_and_token(self):
+        token = self._token('register')
+        response = self.client.post(reverse('register'), {**self.form_data, 'csrfmiddlewaretoken': token})
+        self.assertEqual(response.status_code, 302)
+        self.assertTrue(User.objects.filter(username='newcomer').exists())
+
+    def test_register_rejects_a_token_from_a_rotated_cookie(self):
+        token = self._token('register')
+        request = RequestFactory().post('/')
+        request.COOKIES['csrftoken'] = self.client.cookies['csrftoken'].value
+        rotate_token(request)
+        self.client.cookies['csrftoken'] = request.META['CSRF_COOKIE']
+
+        response = self.client.post(reverse('register'), {**self.form_data, 'csrfmiddlewaretoken': token})
+        self.assertEqual(response.status_code, 403)
+        self.assertFalse(User.objects.filter(username='newcomer').exists())
+
+    def test_register_rejects_post_without_a_token(self):
+        self._token('register')
+        response = self.client.post(reverse('register'), self.form_data)
+        self.assertEqual(response.status_code, 403)
+
+    def test_login_succeeds_with_matching_cookie_and_token(self):
+        User.objects.create_user(username='member', password='secret123')
+        token = self._token('login')
+        response = self.client.post(reverse('login'), {
+            'username': 'member', 'password': 'secret123', 'csrfmiddlewaretoken': token,
+        })
+        self.assertEqual(response.status_code, 302)
+
+    def test_logout_requires_post(self):
+        User.objects.create_user(username='member', password='secret123')
+        self.client.login(username='member', password='secret123')
+        self.assertEqual(self.client.get(reverse('logout')).status_code, 405)
+
+    def test_logout_succeeds_with_matching_cookie_and_token(self):
+        User.objects.create_user(username='member', password='secret123')
+        self.client.login(username='member', password='secret123')
+        token = self._token('dashboard')
+        response = self.client.post(reverse('logout'), {'csrfmiddlewaretoken': token})
+        self.assertEqual(response.status_code, 302)
+        self.assertNotIn('_auth_user_id', self.client.session)
+
+
+class CspReportTests(TestCase):
+    def test_valid_report_is_logged_and_accepted(self):
+        with self.assertLogs('csp.violations', level='WARNING') as logs:
+            response = self.client.post(reverse('csp_report'), data=json.dumps({
+                'csp-report': {
+                    'blocked-uri': 'http://res.cloudinary.com/x.png',
+                    'violated-directive': 'img-src',
+                }
+            }), content_type='application/csp-report')
+        self.assertEqual(response.status_code, 204)
+        self.assertIn('img-src', logs.output[0])
+
+    def test_malformed_report_is_rejected(self):
+        response = self.client.post(reverse('csp_report'), data='not json', content_type='application/csp-report')
+        self.assertEqual(response.status_code, 400)
+
+    def test_oversized_report_is_rejected(self):
+        payload = json.dumps({'csp-report': {'blocked-uri': 'x' * 9000}})
+        response = self.client.post(reverse('csp_report'), data=payload, content_type='application/csp-report')
+        self.assertEqual(response.status_code, 413)
+
+    def test_policy_allows_cloudinary_https_and_forbids_objects(self):
+        policy = self.client.get(reverse('product_list')).headers['Content-Security-Policy']
+        self.assertIn('https://res.cloudinary.com', policy)
+        self.assertIn("object-src 'none'", policy)
+        self.assertNotIn('http://res.cloudinary.com', policy)
+
+
+class CloudinaryUrlTests(TestCase):
+    def test_generated_urls_use_https(self):
+        import cloudinary
+        from cloudinary import utils
+
+        self.assertTrue(cloudinary.config().secure, 'settings.py must enable cloudinary secure=True')
+        cloudinary.config(cloud_name='sample', api_key='key', api_secret='secret')
+        self.assertTrue(utils.cloudinary_url('sample.jpg')[0].startswith('https://'))
