@@ -50,21 +50,27 @@ if not SECRET_KEY:
 # SECURITY WARNING: don't run with debug turned on in production!
 DEBUG = os.getenv('DEBUG', 'False').lower() == 'true'
 
+
+def env_flag(name, default):
+    return os.getenv(name, str(default)).lower() in ('true', '1', 'yes')
+
 ALLOWED_HOSTS = os.getenv('ALLOWED_HOSTS', '').split(',') if os.getenv('ALLOWED_HOSTS') else []
 
 CSRF_TRUSTED_ORIGINS = os.getenv('CSRF_TRUSTED_ORIGINS', '').split(',') if os.getenv('CSRF_TRUSTED_ORIGINS') else []
 
-# Security settings for production
-CSRF_COOKIE_SECURE = not DEBUG
-SESSION_COOKIE_SECURE = not DEBUG
+# Security settings for production. Each flag is env-overridable so a deployment can be
+# tuned without editing settings; they all still default to on when DEBUG is off.
+CSRF_COOKIE_SECURE = env_flag('CSRF_COOKIE_SECURE', not DEBUG)
+SESSION_COOKIE_SECURE = env_flag('SESSION_COOKIE_SECURE', not DEBUG)
 SESSION_COOKIE_HTTPONLY = True
 SESSION_COOKIE_AGE = 9600
 SESSION_SAVE_EVERY_REQUEST = True
 
-SECURE_HSTS_SECONDS = 36000 if not DEBUG else 0
-SECURE_HSTS_PRELOAD = not DEBUG
-SECURE_HSTS_INCLUDE_SUBDOMAINS = not DEBUG
-SECURE_SSL_REDIRECT = not DEBUG
+# 36000 is too short for preload, which browsers only honour at one year or more.
+SECURE_HSTS_SECONDS = int(os.getenv('SECURE_HSTS_SECONDS', '31536000' if not DEBUG else '0'))
+SECURE_HSTS_PRELOAD = env_flag('SECURE_HSTS_PRELOAD', not DEBUG)
+SECURE_HSTS_INCLUDE_SUBDOMAINS = env_flag('SECURE_HSTS_INCLUDE_SUBDOMAINS', not DEBUG)
+SECURE_SSL_REDIRECT = env_flag('SECURE_SSL_REDIRECT', not DEBUG)
 SECURE_BROWSER_XSS_FILTER = True
 SECURE_CONTENT_TYPE_NOSNIFF = True
 SECURE_REFERRER_POLICY = 'strict-origin-when-cross-origin'
