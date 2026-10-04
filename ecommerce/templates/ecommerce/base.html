@@ -415,9 +415,12 @@
         <a href="{% url 'profile_page' %}" class="nav-link">
           <i class="bi bi-person-circle me-1"></i> {{ user.username }}
         </a>
-        <a href="{% url 'logout' %}" class="btn btn-outline-primary btn-sm">
-          <i class="bi bi-box-arrow-right me-1"></i> Logout
-        </a>
+        <form method="POST" action="{% url 'logout' %}" class="d-inline">
+          {% csrf_token %}
+          <button type="submit" class="btn btn-outline-primary btn-sm">
+            <i class="bi bi-box-arrow-right me-1"></i> Logout
+          </button>
+        </form>
      {% else %}
        <a href="{% url 'login' %}" class="btn btn-outline-primary btn-sm">
          <i class="bi bi-box-arrow-in-right me-1"></i> Login

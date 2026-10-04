@@ -223,6 +223,7 @@ def login_view(request):
     return render(request, 'auth/login.html', {'form': form, 'next': request.GET.get('next', '')})
 
 
+@require_POST
 @login_required
 def logout_view(request):
     logout(request)
